@@ -42,8 +42,10 @@ export class StaffSystem implements System {
 
   update(state: GameState, events: EventBus, deltaDays: number): void {
     const today = state.read().date;
-    const resignList: Employee[] = [];
-    const levelUpList: Array<{ employee: Employee; newLevel: number }> = [];
+    // 注意：不能在 state.update 之后引用 draft 中的对象（immer 会 revoke 代理）。
+    // 只收集原始值（id / name / level 等），避免 "proxy has been revoked" 错误。
+    const resignList: Array<{ id: string; name: string; role: Employee['role'] }> = [];
+    const levelUpList: Array<{ employeeId: string; newLevel: number }> = [];
 
     // 1. 更新每个员工的疲劳、忠诚、经验、升级、离职
     state.update((draft) => {
@@ -86,7 +88,7 @@ export class StaffSystem implements System {
           const shuffled = [...attrKeys].sort(() => Math.random() - 0.5);
           (emp.attributes as any)[shuffled[0]] += LEVEL_UP_ATTRIBUTE_GAIN;
           (emp.attributes as any)[shuffled[1]] += LEVEL_UP_ATTRIBUTE_GAIN;
-          levelUpList.push({ employee: emp, newLevel: emp.level });
+          levelUpList.push({ employeeId: emp.id, newLevel: emp.level });
         }
 
         // —— 离职检查 ——
@@ -96,7 +98,7 @@ export class StaffSystem implements System {
           // 忠诚度越低概率越高
           resignChance += (StaffSystem.RESIGN_THRESHOLD - emp.loyalty) * 0.005 * deltaDays;
           if (Math.random() < resignChance) {
-            resignList.push(emp);
+            resignList.push({ id: emp.id, name: emp.name, role: emp.role });
             continue; // 不加入 survivors
           }
         }
@@ -113,8 +115,8 @@ export class StaffSystem implements System {
     }
 
     // 3. 发射升级事件
-    for (const { employee, newLevel } of levelUpList) {
-      events.emit('EMPLOYEE_LEVEL_UP', employee.id, newLevel);
+    for (const { employeeId, newLevel } of levelUpList) {
+      events.emit('EMPLOYEE_LEVEL_UP', employeeId, newLevel);
     }
 
     // 4. 发薪日（每 PAY_PERIOD_DAYS 天）
