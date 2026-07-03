@@ -139,8 +139,20 @@ export const SKILL_CONFIG: Record<string, Omit<Skill, 'unlocked'>> = {
 /** 招聘费用（一次性） */
 export const HIRE_COST = 10_000;
 
+/** 普通员工招聘费用（一次性，每人） */
+export const NORMAL_HIRE_COST = 3_000;
+
+/** 普通员工年薪（美元） */
+export const NORMAL_EMPLOYEE_SALARY = 50_000;
+
+/** 核心员工每角色数量上限 */
+export const CORE_EMPLOYEE_CAP_PER_ROLE = 10;
+
 /** 发薪周期（天） */
 export const PAY_PERIOD_DAYS = 30;
+
+/** 普通员工发薪周期（天），可与核心不同 */
+export const NORMAL_PAY_PERIOD_DAYS = 30;
 
 /** 升级所需经验阈值（按等级递增） */
 export function experienceForLevel(level: number): number {
@@ -152,3 +164,12 @@ export const LEVEL_UP_ATTRIBUTE_GAIN = 3;
 
 /** 升级时获得的技能点 */
 export const LEVEL_UP_SKILL_POINTS = 1;
+
+/** StaffRole 到普通员工资源 ID 的映射 */
+export const ROLE_TO_STAFF_RESOURCE: Record<StaffRole, string> = {
+  [StaffRole.RESEARCHER]: 'staff_researcher',
+  [StaffRole.DATA_ENGINEER]: 'staff_data_engineer',
+  [StaffRole.SYSTEM_ENGINEER]: 'staff_system_engineer',
+  [StaffRole.PRODUCT_MANAGER]: 'staff_product_manager',
+  [StaffRole.LEGAL_PR]: 'staff_legal_pr',
+};

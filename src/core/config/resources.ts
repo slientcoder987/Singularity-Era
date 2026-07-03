@@ -7,6 +7,7 @@ import type { ResourceDefinition } from '../resources/ResourceTypes';
  * 资源会自动出现在状态初始化、顶部栏（若 showInTopBar）、命令系统中。
  */
 export const INITIAL_RESOURCES: ResourceDefinition[] = [
+  // ===== 货币 =====
   {
     id: 'funds',
     name: '资金',
@@ -17,6 +18,18 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     initialValue: 1_000_000,
     uiConfig: { icon: '💰', color: '#ffd76b', showInTopBar: true, format: 'currency' },
   },
+  // ===== 算力 =====
+  {
+    id: 'compute_power',
+    name: '算力',
+    category: 'asset',
+    isContinuous: true,
+    minValue: 0,
+    maxValue: Infinity,
+    initialValue: 624, // 初始 1 张 A100 = 624 TFLOPS
+    uiConfig: { icon: '🧠', color: '#a78bfa', showInTopBar: true, format: 'tflops' },
+  },
+  // ===== 硬件（不在顶栏显示，详情见资源面板） =====
   {
     id: 'compute_h100',
     name: 'H100 计算卡',
@@ -25,7 +38,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: 10000,
     initialValue: 0,
-    uiConfig: { icon: '🖥️', color: '#56dce6', showInTopBar: true, format: 'number' },
+    uiConfig: { icon: '🖥️', color: '#56dce6', showInTopBar: false, format: 'number' },
   },
   {
     id: 'compute_a100',
@@ -35,8 +48,9 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: 10000,
     initialValue: 1,
-    uiConfig: { icon: '🖥️', color: '#56dce6', showInTopBar: true, format: 'number' },
+    uiConfig: { icon: '🖥️', color: '#56dce6', showInTopBar: false, format: 'number' },
   },
+  // ===== 电力 =====
   {
     id: 'power_kw',
     name: '电力容量',
@@ -46,6 +60,57 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     maxValue: 1_000_000,
     initialValue: 100,
     uiConfig: { icon: '⚡', color: '#ffb454', showInTopBar: true, format: 'number' },
+  },
+  // ===== 普通员工（每种角色对应一种资源） =====
+  {
+    id: 'staff_researcher',
+    name: '研究员（普通）',
+    category: 'human',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 500,
+    initialValue: 0,
+    uiConfig: { icon: '👨‍🔬', color: '#a78bfa', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'staff_data_engineer',
+    name: '数据工程师（普通）',
+    category: 'human',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 500,
+    initialValue: 0,
+    uiConfig: { icon: '👩‍💻', color: '#a78bfa', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'staff_system_engineer',
+    name: '系统工程师（普通）',
+    category: 'human',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 500,
+    initialValue: 0,
+    uiConfig: { icon: '🔧', color: '#a78bfa', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'staff_product_manager',
+    name: '产品经理（普通）',
+    category: 'human',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 500,
+    initialValue: 0,
+    uiConfig: { icon: '📋', color: '#a78bfa', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'staff_legal_pr',
+    name: '法务/公关（普通）',
+    category: 'human',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 500,
+    initialValue: 0,
+    uiConfig: { icon: '⚖️', color: '#a78bfa', showInTopBar: false, format: 'number' },
   },
 ];
 

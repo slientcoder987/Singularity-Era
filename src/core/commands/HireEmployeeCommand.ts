@@ -2,7 +2,7 @@ import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { Command } from '../interfaces/Command';
 import { StaffRole, type Employee, type StaffAttributes } from '../entities/Employee';
-import { ROLE_CONFIG, SKILL_CONFIG, HIRE_COST } from '../config/employees';
+import { ROLE_CONFIG, SKILL_CONFIG, HIRE_COST, CORE_EMPLOYEE_CAP_PER_ROLE } from '../config/employees';
 
 /**
  * HireEmployeeCommand
@@ -25,6 +25,19 @@ export class HireEmployeeCommand implements Command {
     const roleCfg = ROLE_CONFIG[this.role];
     if (!roleCfg) {
       events.emit('HIRE_REJECTED', { role: this.role, reason: '未知角色' });
+      return;
+    }
+
+    // 检查该角色核心员工数量上限
+    const current = state.read();
+    const roleCoreCount = current.employees.filter((e) => e.role === this.role).length;
+    if (roleCoreCount >= CORE_EMPLOYEE_CAP_PER_ROLE) {
+      events.emit('HIRE_REJECTED', {
+        role: this.role,
+        reason: `核心员工已达上限（${CORE_EMPLOYEE_CAP_PER_ROLE}人）`,
+        cap: CORE_EMPLOYEE_CAP_PER_ROLE,
+        current: roleCoreCount,
+      });
       return;
     }
 

@@ -2,8 +2,16 @@ import { useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { StaffRole, type Employee } from '../../core/entities/Employee';
-import { ROLE_CONFIG, HIRE_COST, experienceForLevel } from '../../core/config/employees';
+import {
+  ROLE_CONFIG,
+  HIRE_COST,
+  NORMAL_HIRE_COST,
+  CORE_EMPLOYEE_CAP_PER_ROLE,
+  ROLE_TO_STAFF_RESOURCE,
+  experienceForLevel,
+} from '../../core/config/employees';
 import { HireEmployeeCommand } from '../../core/commands/HireEmployeeCommand';
+import { HireNormalEmployeeCommand } from '../../core/commands/HireNormalEmployeeCommand';
 import { FireEmployeeCommand } from '../../core/commands/FireEmployeeCommand';
 import { AdjustSalaryCommand } from '../../core/commands/AdjustSalaryCommand';
 import { LearnSkillCommand } from '../../core/commands/LearnSkillCommand';
@@ -14,43 +22,95 @@ import styles from '../styles/App.module.css';
  * EmployeePanel
  *
  * 员工管理面板：
- * - 顶部：招聘按钮（按角色）+ 员工统计
- * - 列表：每个员工一张卡片，显示属性、技能、薪资、忠诚、疲劳
+ * - 顶部：核心员工招聘按钮（按角色，含上限提示）+ 普通员工招聘按钮
+ * - 统计行：核心员工数 / 普通员工数 / 每日薪资支出
+ * - 列表：核心员工卡片（每张显示属性、技能、薪资、忠诚、疲劳）
  * - 卡片内：解雇、加薪/减薪、学习技能操作
  */
 export function EmployeePanel() {
   const game = useGame();
   const employees = useGameState((s) => s.employees);
+  const resources = useGameState((s) => s.resources);
   const funds = useGameState((s) => s.resources['funds'] ?? 0);
+
+  // 普通员工总数
+  const humanResources = game.registry.getByCategory('human');
+  const normalCount = humanResources.reduce((sum, def) => sum + (resources[def.id] ?? 0), 0);
+
+  // 每日薪资支出
+  const coreDailySalary = employees.reduce((sum, e) => sum + e.salary / 365, 0);
+  const normalDailySalary = humanResources.reduce((sum, def) => {
+    const count = resources[def.id] ?? 0;
+    return sum + count * (50000 / 365); // 普通员工年薪 $50,000
+  }, 0);
 
   return (
     <section className={styles.devPanel}>
       <h3 className={styles.devTitle}>员工系统 · 人力管理</h3>
 
       <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>招聘（一次性 ${HIRE_COST.toLocaleString()}）</span>
-        {(Object.keys(ROLE_CONFIG) as StaffRole[]).map((role) => (
-          <button
-            key={role}
-            className={styles.btn}
-            onClick={() => game.executeCommand(new HireEmployeeCommand(role))}
-            disabled={funds < HIRE_COST}
-          >
-            招 {ROLE_CONFIG[role].displayName}
-          </button>
-        ))}
+        <span className={styles.devRowLabel}>核心员工</span>
+        <span className={styles.devHint}>
+          上限 {CORE_EMPLOYEE_CAP_PER_ROLE} 人/角色 · 招聘费 ${HIRE_COST.toLocaleString()}/人
+        </span>
+      </div>
+
+      <div className={styles.devRow}>
+        {(Object.keys(ROLE_CONFIG) as StaffRole[]).map((role) => {
+          const roleCoreCount = employees.filter((e) => e.role === role).length;
+          const isFull = roleCoreCount >= CORE_EMPLOYEE_CAP_PER_ROLE;
+          return (
+            <button
+              key={role}
+              className={styles.btn}
+              onClick={() => game.executeCommand(new HireEmployeeCommand(role))}
+              disabled={funds < HIRE_COST || isFull}
+              title={isFull ? '已达上限' : undefined}
+            >
+              招 {ROLE_CONFIG[role].displayName}
+              <span className={styles.devHint}>
+                ({roleCoreCount}/{CORE_EMPLOYEE_CAP_PER_ROLE})
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>普通员工</span>
+        <span className={styles.devHint}>
+          无上限 · 招聘费 ${NORMAL_HIRE_COST.toLocaleString()}/人 · 年薪 $50,000
+        </span>
+      </div>
+
+      <div className={styles.devRow}>
+        {(Object.keys(ROLE_CONFIG) as StaffRole[]).map((role) => {
+          const staffId = ROLE_TO_STAFF_RESOURCE[role];
+          const count = resources[staffId] ?? 0;
+          return (
+            <button
+              key={`normal-${role}`}
+              className={styles.btn}
+              onClick={() => game.executeCommand(new HireNormalEmployeeCommand(role))}
+              disabled={funds < NORMAL_HIRE_COST}
+            >
+              招 {ROLE_CONFIG[role].displayName}（普通）
+              <span className={styles.devHint}>({count})</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>统计</span>
         <span className={styles.devHint}>
-          在职 {employees.length} 人 · 每日薪资支出{' '}
-          {formatCurrency(employees.reduce((sum, e) => sum + e.salary / 365, 0))}
+          核心 {employees.length} 人 · 普通 {normalCount} 人 · 合计 {employees.length + normalCount} 人
+          {' · '}每日薪资 {formatCurrency(coreDailySalary + normalDailySalary)}
         </span>
       </div>
 
       {employees.length === 0 ? (
-        <div className={styles.emptyHint}>尚无员工，点击上方按钮招聘</div>
+        <div className={styles.emptyHint}>尚无核心员工，点击上方按钮招聘</div>
       ) : (
         <div className={styles.empList}>
           {employees.map((emp) => (

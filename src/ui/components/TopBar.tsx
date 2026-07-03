@@ -6,18 +6,24 @@ import styles from '../styles/App.module.css';
 /**
  * TopBar
  *
- * 顶部状态栏：品牌标识 + 日期 + 动态资源展示。
- * 资源列表来自 ResourceRegistry.getTopBarResources()，
- * 数值通过 useGameState(s => s.resources[id]) 订阅。
- * 新增资源只需在 registry 中注册并设 showInTopBar:true，即可自动出现。
+ * 顶部状态栏：品牌标识 + 日期 + 资金 + 算力 + 员工 + 电力。
+ * 硬件卡详情和普通员工分类在资源面板中展示。
+ * 新增顶栏资源只需在 registry 中注册并设 showInTopBar:true。
  */
 export function TopBar() {
   const game = useGame();
   const date = useGameState((s) => s.date);
   const startDate = useGameState((s) => s.startDate);
   const resources = useGameState((s) => s.resources);
+  const coreEmployees = useGameState((s) => s.employees);
 
   const topBarResources = game.registry.getTopBarResources();
+  // funds, compute_power, power_kw
+
+  // 计算员工总数：核心员工 + 普通员工（human 类别资源之和）
+  const humanResources = game.registry.getByCategory('human');
+  const normalEmployeeCount = humanResources.reduce((sum, def) => sum + (resources[def.id] ?? 0), 0);
+  const totalEmployees = coreEmployees.length + normalEmployeeCount;
 
   return (
     <header className={styles.topBar}>
@@ -33,6 +39,7 @@ export function TopBar() {
           <span className={styles.statValue}>{formatGameDate(startDate, date)}</span>
         </div>
 
+        {/* 资金、算力、电力 */}
         {topBarResources.map((def) => {
           const value = resources[def.id] ?? 0;
           const format = def.uiConfig?.format;
@@ -54,6 +61,20 @@ export function TopBar() {
             </div>
           );
         })}
+
+        {/* 员工总数（核心 + 普通） */}
+        <div className={styles.statGroup}>
+          <div className={styles.statDivider} />
+          <div className={styles.stat}>
+            <span className={styles.statLabel}>
+              <span className={styles.statIcon} aria-hidden="true">👥</span>
+              员工
+            </span>
+            <span className={styles.statValue} style={{ color: '#a78bfa' }}>
+              {totalEmployees.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+            </span>
+          </div>
+        </div>
       </div>
     </header>
   );

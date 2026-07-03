@@ -38,11 +38,14 @@ export class ComputeHardwareSystem implements System {
     // 1. 处理到期订单交付
     const dueOrders = current.pendingOrders.filter((o) => o.deliveryDay <= today);
     if (dueOrders.length > 0) {
+      let tflopsGained = 0;
+
       state.update((draft) => {
         // 移除已交付订单
         draft.pendingOrders = draft.pendingOrders.filter((o) => o.deliveryDay > today);
 
         for (const order of dueOrders) {
+          const spec = this.specs.get(order.modelId);
           const pool = (draft.resourceMeta[order.modelId] as CardInstance[]) ?? [];
           for (let i = 0; i < order.quantity; i++) {
             pool.push({
@@ -55,19 +58,29 @@ export class ComputeHardwareSystem implements System {
             });
           }
           draft.resourceMeta[order.modelId] = pool;
-          // 同步资源数值
+          // 同步硬件资源数值
           draft.resources[order.modelId] = (draft.resources[order.modelId] ?? 0) + order.quantity;
+          // 同步算力
+          if (spec) {
+            const addedTFlops = order.quantity * spec.tflopsPerCard;
+            draft.resources['compute_power'] = (draft.resources['compute_power'] ?? 0) + addedTFlops;
+            tflopsGained += addedTFlops;
+          }
         }
       });
 
       for (const order of dueOrders) {
         events.emit('HARDWARE_DELIVERED', order.modelId, order.quantity);
       }
+      if (tflopsGained > 0) {
+        events.emit('COMPUTE_POWER_CHANGED', tflopsGained);
+      }
     }
 
     // 2. 计算卡磨损与故障
     const hardwareDefs = this.registry.getByCategory('hardware');
     let totalBroken = 0;
+    let tflopsLost = 0;
     const brokenReport: Array<{ modelId: string; count: number }> = [];
 
     state.update((draft) => {
@@ -93,7 +106,11 @@ export class ComputeHardwareSystem implements System {
           // 同步资源数值：在线数量 = 总数 - broken
           const online = pool.filter((c) => c.status !== 'broken').length;
           draft.resources[def.id] = online;
+          // 同步算力
+          const lostTFlops = brokenCount * spec.tflopsPerCard;
+          draft.resources['compute_power'] = (draft.resources['compute_power'] ?? 0) - lostTFlops;
           totalBroken += brokenCount;
+          tflopsLost += lostTFlops;
           brokenReport.push({ modelId: def.id, count: brokenCount });
         }
       }
@@ -101,6 +118,7 @@ export class ComputeHardwareSystem implements System {
 
     if (totalBroken > 0) {
       events.emit('CARD_BREAKDOWN', brokenReport);
+      events.emit('COMPUTE_POWER_CHANGED', -tflopsLost);
     }
   }
 
