@@ -33,6 +33,9 @@ export function EmployeePanel() {
   const resources = useGameState((s) => s.resources);
   const funds = useGameState((s) => s.resources['funds'] ?? 0);
 
+  // 当前筛选角色：'all' 表示全部，否则按 StaffRole 筛选
+  const [roleFilter, setRoleFilter] = useState<StaffRole | 'all'>('all');
+
   // 普通员工总数
   const humanResources = game.registry.getByCategory('human');
   const normalCount = humanResources.reduce((sum, def) => sum + (resources[def.id] ?? 0), 0);
@@ -109,15 +112,42 @@ export function EmployeePanel() {
         </span>
       </div>
 
+      {/* 按角色筛选标签 */}
+      <div className={styles.empFilter}>
+        <button
+          className={`${styles.empFilterBtn} ${roleFilter === 'all' ? styles.empFilterBtnActive : ''}`}
+          onClick={() => setRoleFilter('all')}
+        >
+          全部 ({employees.length})
+        </button>
+        {(Object.keys(ROLE_CONFIG) as StaffRole[]).map((role) => {
+          const count = employees.filter((e) => e.role === role).length;
+          return (
+            <button
+              key={role}
+              className={`${styles.empFilterBtn} ${roleFilter === role ? styles.empFilterBtnActive : ''}`}
+              onClick={() => setRoleFilter(role)}
+            >
+              {ROLE_CONFIG[role].displayName} ({count})
+            </button>
+          );
+        })}
+      </div>
+
       {employees.length === 0 ? (
         <div className={styles.emptyHint}>尚无核心员工，点击上方按钮招聘</div>
-      ) : (
-        <div className={styles.empList}>
-          {employees.map((emp) => (
-            <EmployeeCard key={emp.id} emp={emp} />
-          ))}
-        </div>
-      )}
+      ) : (() => {
+        const filtered = employees.filter((emp) => roleFilter === 'all' || emp.role === roleFilter);
+        return filtered.length === 0 ? (
+          <div className={styles.emptyHint}>该分类暂无员工</div>
+        ) : (
+          <div className={styles.empList}>
+            {filtered.map((emp) => (
+              <EmployeeCard key={emp.id} emp={emp} />
+            ))}
+          </div>
+        );
+      })()}
     </section>
   );
 }

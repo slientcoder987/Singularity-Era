@@ -2,7 +2,9 @@ import type { GameState, CardInstance } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { ResourceRegistry } from '../resources/ResourceRegistry';
-import { HARDWARE_SPECS, POWER_CONFIG } from '../config/resources';
+import { COMPUTE_CARD_SPECS } from '../config/computeCards';
+import type { ComputeCardSpec } from '../entities/ComputeCard';
+import { POWER_CONFIG } from '../config/resources';
 
 /**
  * PowerSystem
@@ -21,11 +23,11 @@ import { HARDWARE_SPECS, POWER_CONFIG } from '../config/resources';
 export class PowerSystem implements System {
   name = 'PowerSystem';
   private readonly registry: ResourceRegistry;
-  private readonly specs = new Map<string, typeof HARDWARE_SPECS[number]>();
+  private readonly specs = new Map<string, ComputeCardSpec>();
 
   constructor(registry: ResourceRegistry) {
     this.registry = registry;
-    for (const spec of HARDWARE_SPECS) {
+    for (const spec of COMPUTE_CARD_SPECS) {
       this.specs.set(spec.resourceId, spec);
     }
   }

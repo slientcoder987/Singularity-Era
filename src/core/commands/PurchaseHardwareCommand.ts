@@ -1,7 +1,7 @@
 import type { GameState, HardwareOrder } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { Command } from '../interfaces/Command';
-import { HARDWARE_SPECS } from '../config/resources';
+import { getCardSpec } from '../config/computeCards';
 
 /**
  * PurchaseHardwareCommand
@@ -23,7 +23,7 @@ export class PurchaseHardwareCommand implements Command {
       return;
     }
 
-    const spec = HARDWARE_SPECS.find((s) => s.resourceId === this.modelId);
+    const spec = getCardSpec(this.modelId);
     if (!spec) {
       events.emit('PURCHASE_REJECTED', { modelId: this.modelId, reason: '未知硬件型号' });
       return;

@@ -2,6 +2,8 @@ import { produce } from 'immer';
 import { clamp } from './utils';
 import type { ResourceDefinition } from './resources/ResourceTypes';
 import type { Employee } from './entities/Employee';
+import type { ServerNode, Cluster, DataCenter, TechEffect } from './entities/Infrastructure';
+import type { TrainingProject } from './entities/TrainingProject';
 
 /**
  * 硬件采购订单
@@ -16,6 +18,8 @@ export interface HardwareOrder {
 
 /**
  * 计算卡实例（单张卡的运行时状态）
+ *
+ * 兼容 ComputeCardInstance：location 指向所在节点 id。
  */
 export interface CardInstance {
   uid: string;
@@ -27,6 +31,8 @@ export interface CardInstance {
   assignedProjectId: string | null;
   /** 购入日期 */
   purchasedAt: number;
+  /** 所在服务器节点 id（未安装为 null） */
+  location: string | null;
 }
 
 /**
@@ -54,6 +60,22 @@ export interface GameData {
   employees: Employee[];
   /** 模型列表（占位，后续扩展） */
   models: any[];
+
+  // ===== 基础设施层级 =====
+  /** 服务器节点列表 */
+  serverNodes: ServerNode[];
+  /** 集群列表 */
+  clusters: Cluster[];
+  /** 数据中心列表 */
+  dataCenters: DataCenter[];
+
+  // ===== 训练系统 =====
+  /** 训练项目列表 */
+  trainingProjects: TrainingProject[];
+
+  // ===== 科技效果（预留，后续科研系统填充） =====
+  /** 当前激活的科技效果列表 */
+  activeTechEffects: TechEffect[];
 }
 
 /** 状态变更监听器 */

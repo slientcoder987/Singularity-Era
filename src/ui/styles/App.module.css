@@ -309,6 +309,97 @@ body {
   font-style: italic;
 }
 
+/* ===== 员工筛选标签 ===== */
+.empFilter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.empFilterBtn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: rgba(86, 220, 230, 0.04);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  user-select: none;
+}
+
+.empFilterBtn:hover {
+  background: rgba(86, 220, 230, 0.1);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.empFilterBtnActive {
+  background: rgba(86, 220, 230, 0.16);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ===== 资源分类内容区 ===== */
+.tabBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+  animation: pageIn 0.15s ease-out;
+}
+
+/* ===== 基础设施拓扑树 ===== */
+.treeNode {
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  margin-left: 4px;
+}
+
+.treeChild {
+  border-left: 2px solid rgba(86, 220, 230, 0.15);
+  padding-left: 12px;
+  margin-left: 4px;
+}
+
+/* ===== 表单控件 ===== */
+.select {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.select:focus {
+  border-color: var(--accent);
+}
+
+.input {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--accent);
+}
+
 /* ===== 员工面板 ===== */
 .empList {
   display: grid;

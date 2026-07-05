@@ -2,7 +2,8 @@ import type { GameState, CardInstance } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { ResourceRegistry } from '../resources/ResourceRegistry';
-import { HARDWARE_SPECS, type HardwareSpec } from '../config/resources';
+import { COMPUTE_CARD_SPECS } from '../config/computeCards';
+import type { ComputeCardSpec } from '../entities/ComputeCard';
 
 /**
  * ComputeHardwareSystem
@@ -16,17 +17,18 @@ import { HARDWARE_SPECS, type HardwareSpec } from '../config/resources';
  *
  * 硬件实例池存储在 state.resourceMeta[modelId] 中（CardInstance[]）。
  * 资源数值（resources[modelId]）作为数量统计，与实例池保持同步。
+ * CardInstance.location 指向所在节点 id（未安装为 null）。
  *
- * 扩展新硬件型号：只需在 HARDWARE_SPECS 添加配置并注册对应资源，本系统自动处理。
+ * 扩展新硬件型号：只需在 config/computeCards.ts 添加配置并注册对应资源，本系统自动处理。
  */
 export class ComputeHardwareSystem implements System {
   name = 'ComputeHardwareSystem';
   private readonly registry: ResourceRegistry;
-  private readonly specs = new Map<string, HardwareSpec>();
+  private readonly specs = new Map<string, ComputeCardSpec>();
 
   constructor(registry: ResourceRegistry) {
     this.registry = registry;
-    for (const spec of HARDWARE_SPECS) {
+    for (const spec of COMPUTE_CARD_SPECS) {
       this.specs.set(spec.resourceId, spec);
     }
   }
@@ -55,6 +57,7 @@ export class ComputeHardwareSystem implements System {
               age: 0,
               assignedProjectId: null,
               purchasedAt: today,
+              location: null,
             });
           }
           draft.resourceMeta[order.modelId] = pool;

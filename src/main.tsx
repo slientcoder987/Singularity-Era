@@ -6,6 +6,8 @@ import { ResourceRegistry } from './core/resources/ResourceRegistry';
 import { ComputeHardwareSystem } from './core/systems/ComputeHardwareSystem';
 import { PowerSystem } from './core/systems/PowerSystem';
 import { StaffSystem } from './core/systems/StaffSystem';
+import { TrainingSystem } from './core/systems/TrainingSystem';
+import { InfraMaintenanceSystem } from './core/systems/InfraMaintenanceSystem';
 import { INITIAL_RESOURCES } from './core/config/resources';
 import { GameProvider } from './ui/context/GameContext';
 import { App } from './ui/components/App';
@@ -32,6 +34,11 @@ const initialData: GameData = {
   pendingOrders: [],
   employees: [],
   models: [],
+  serverNodes: [],
+  clusters: [],
+  dataCenters: [],
+  trainingProjects: [],
+  activeTechEffects: [],
 };
 
 // 1. 先创建 registry 并注册资源
@@ -43,6 +50,8 @@ const systems = [
   new ComputeHardwareSystem(registry),
   new PowerSystem(registry),
   new StaffSystem(),
+  new TrainingSystem(),
+  new InfraMaintenanceSystem(),
 ];
 
 // 3. 创建 Game，传入 registry（Game 内部会再次 registerAll，幂等）

@@ -1,0 +1,614 @@
+import { useState } from 'react';
+import { useGame } from '../hooks/useGame';
+import { useGameState } from '../hooks/useGameState';
+import type { CardInstance } from '../../core/GameState';
+import {
+  BuyServerNodeCommand,
+  InstallCardCommand,
+  CreateClusterCommand,
+  BuildDataCenterCommand,
+  MoveClusterCommand,
+} from '../../core/commands/InfraCommands';
+import { StartTrainingCommand } from '../../core/commands/TrainingCommands';
+import {
+  NODE_TEMPLATES,
+  CLUSTER_NETWORKS,
+  DATA_CENTER_LOCATIONS,
+  COOLING_TYPES,
+} from '../../core/config/infrastructure';
+import { getCardSpec } from '../../core/config/computeCards';
+import styles from '../styles/App.module.css';
+
+type InfraTab = 'topology' | 'build' | 'training';
+
+const INFRA_TABS: { key: InfraTab; label: string; icon: string }[] = [
+  { key: 'topology', label: '拓扑', icon: '🏗️' },
+  { key: 'build', label: '建造', icon: '🔨' },
+  { key: 'training', label: '训练', icon: '🎯' },
+];
+
+export function InfrastructurePanel() {
+  const game = useGame();
+  const [tab, setTab] = useState<InfraTab>('topology');
+
+  return (
+    <section className={styles.devPanel}>
+      <h3 className={styles.devTitle}>基础设施系统</h3>
+
+      <div className={styles.empFilter}>
+        {INFRA_TABS.map((t) => (
+          <button
+            key={t.key}
+            className={`${styles.empFilterBtn} ${tab === t.key ? styles.empFilterBtnActive : ''}`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'topology' && <TopologyTab />}
+      {tab === 'build' && <BuildTab game={game} />}
+      {tab === 'training' && <TrainingTab game={game} />}
+    </section>
+  );
+}
+
+/* ============== 拓扑视图 ============== */
+
+function TopologyTab() {
+  const dataCenters = useGameState((s) => s.dataCenters);
+  const clusters = useGameState((s) => s.clusters);
+  const serverNodes = useGameState((s) => s.serverNodes);
+  const resourceMeta = useGameState((s) => s.resourceMeta);
+
+  // 未加入集群的节点
+  const freeNodes = serverNodes.filter((n) => n.clusterId === null);
+  // 未加入数据中心的集群
+  const freeClusters = clusters.filter((c) => c.dataCenterId === null);
+
+  // 获取卡实例
+  const getCard = (uid: string): CardInstance | undefined => {
+    for (const key of Object.keys(resourceMeta)) {
+      const pool = resourceMeta[key] as CardInstance[] | undefined;
+      const card = pool?.find((c) => c.uid === uid);
+      if (card) return card;
+    }
+    return undefined;
+  };
+
+  if (dataCenters.length === 0 && clusters.length === 0 && serverNodes.length === 0) {
+    return <div className={styles.emptyHint}>尚无基础设施，请前往"建造"标签建设</div>;
+  }
+
+  return (
+    <div className={styles.tabBody}>
+      {/* 数据中心 → 集群 → 节点 → 卡 */}
+      {dataCenters.map((dc) => (
+        <div key={dc.id} className={styles.treeNode}>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>🏢 {dc.name}</span>
+            <span className={styles.devHint}>
+              {dc.maxPowerMW} MW · PUE {dc.pue} · {dc.coolingType} · {dc.clusters.length} 集群
+            </span>
+          </div>
+          {dc.clusters.map((clusterId) => {
+            const cluster = clusters.find((c) => c.id === clusterId);
+            if (!cluster) return null;
+            return (
+              <div key={clusterId} className={styles.treeChild}>
+                <div className={styles.devRow}>
+                  <span className={styles.devRowLabel}>🔗 {cluster.name}</span>
+                  <span className={styles.devHint}>
+                    {cluster.network} · {cluster.nodes.length}/{cluster.maxNodes} 节点 · +{(cluster.utilizationBonus * 100).toFixed(0)}%
+                  </span>
+                </div>
+                {cluster.nodes.map((nodeId) => {
+                  const node = serverNodes.find((n) => n.id === nodeId);
+                  if (!node) return null;
+                  return (
+                    <div key={nodeId} className={styles.treeChild}>
+                      <div className={styles.devRow}>
+                        <span className={styles.devRowLabel}>🖥️ {node.name}</span>
+                        <span className={styles.devHint}>
+                          {node.installedCards.length}/{node.slotCount} 卡 · {node.interconnect}
+                        </span>
+                      </div>
+                      {node.installedCards.map((cardUid) => {
+                        const card = getCard(cardUid);
+                        const spec = card ? getCardSpec(card.modelId) : undefined;
+                        return (
+                          <div key={cardUid} className={styles.treeChild}>
+                            <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                              · {spec?.name ?? card?.modelId} ({card?.status})
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+
+      {/* 游离集群 */}
+      {freeClusters.map((cluster) => (
+        <div key={cluster.id} className={styles.treeNode}>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>🔗 {cluster.name}（未入数据中心）</span>
+            <span className={styles.devHint}>
+              {cluster.network} · {cluster.nodes.length}/{cluster.maxNodes} 节点
+            </span>
+          </div>
+          {cluster.nodes.map((nodeId) => {
+            const node = serverNodes.find((n) => n.id === nodeId);
+            if (!node) return null;
+            return (
+              <div key={nodeId} className={styles.treeChild}>
+                <div className={styles.devRow}>
+                  <span className={styles.devRowLabel}>🖥️ {node.name}</span>
+                  <span className={styles.devHint}>
+                    {node.installedCards.length}/{node.slotCount} 卡
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+
+      {/* 游离节点 */}
+      {freeNodes.length > 0 && (
+        <div className={styles.treeNode}>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>独立节点（未加入集群）</span>
+          </div>
+          {freeNodes.map((node) => (
+            <div key={node.id} className={styles.treeChild}>
+              <div className={styles.devRow}>
+                <span className={styles.devRowLabel}>🖥️ {node.name}</span>
+                <span className={styles.devHint}>
+                  {node.installedCards.length}/{node.slotCount} 卡 · {node.interconnect}
+                </span>
+              </div>
+              {node.installedCards.length < node.slotCount && (
+                <div className={styles.devHint} style={{ paddingLeft: '20px' }}>
+                  可安装 {node.slotCount - node.installedCards.length} 张卡
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============== 建造视图 ============== */
+
+function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
+  const funds = useGameState((s) => s.resources['funds'] ?? 0);
+  const serverNodes = useGameState((s) => s.serverNodes);
+  const resourceMeta = useGameState((s) => s.resourceMeta);
+  const clusters = useGameState((s) => s.clusters);
+  const dataCenters = useGameState((s) => s.dataCenters);
+
+  // 选中的节点（用于安装卡/创建集群）
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('');
+  const [selectedCardUid, setSelectedCardUid] = useState<string>('');
+  const [selectedNetworkId, setSelectedNetworkId] = useState<string>(CLUSTER_NETWORKS[0].id);
+  const [selectedLocationId, setSelectedLocationId] = useState<string>(DATA_CENTER_LOCATIONS[0].id);
+  const [selectedCoolingId, setSelectedCoolingId] = useState<'air' | 'liquid' | 'immersion'>('air');
+  const [dcPower, setDcPower] = useState<number>(1);
+  const [selectedClusterId, setSelectedClusterId] = useState<string>('');
+  const [selectedDcId, setSelectedDcId] = useState<string>('');
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+
+  // 未加入集群的节点
+  const freeNodesForCluster = serverNodes.filter((n) => n.clusterId === null);
+  const selectedNetwork = CLUSTER_NETWORKS.find((n) => n.id === selectedNetworkId) ?? CLUSTER_NETWORKS[0];
+  const clusterBuildCost = selectedNetwork.costPerNode * selectedNodeIds.size;
+
+  const selectedLocation = DATA_CENTER_LOCATIONS.find((l) => l.id === selectedLocationId) ?? DATA_CENTER_LOCATIONS[0];
+  const selectedCooling = COOLING_TYPES.find((c) => c.id === selectedCoolingId) ?? COOLING_TYPES[0];
+  const dcBuildCost = selectedLocation.buildCostPerMW * dcPower + selectedCooling.extraBuildCostPerMW * dcPower;
+
+  const toggleNodeId = (id: string) => {
+    setSelectedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // 获取未安装的卡
+  const getUninstalledCards = (): Array<{ uid: string; modelId: string }> => {
+    const cards: Array<{ uid: string; modelId: string }> = [];
+    for (const key of Object.keys(resourceMeta)) {
+      const pool = resourceMeta[key] as CardInstance[] | undefined;
+      if (!pool) continue;
+      for (const card of pool) {
+        if (card.location === null && card.status === 'online') {
+          cards.push({ uid: card.uid, modelId: key });
+        }
+      }
+    }
+    return cards;
+  };
+
+  const uninstalledCards = getUninstalledCards();
+
+  return (
+    <div className={styles.tabBody}>
+      {/* 买服务器节点 */}
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>服务器节点</span>
+      </div>
+      {NODE_TEMPLATES.map((tpl) => (
+        <div key={tpl.id} className={styles.devRow}>
+          <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+            · {tpl.name}
+          </span>
+          <span className={styles.devHint}>
+            {tpl.slotCount} 卡槽 · {tpl.powerSupplyKW} kW · ${tpl.cost.toLocaleString()}
+          </span>
+          <button
+            className={styles.btn}
+            disabled={funds < tpl.cost}
+            onClick={() => game.executeCommand(new BuyServerNodeCommand(tpl.id))}
+          >
+            购买
+          </button>
+        </div>
+      ))}
+
+      {/* 安装卡到节点 */}
+      {serverNodes.length > 0 && uninstalledCards.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>安装显卡</span>
+          </div>
+          <div className={styles.devRow}>
+            <select
+              className={styles.select}
+              value={selectedCardUid}
+              onChange={(e) => setSelectedCardUid(e.target.value)}
+            >
+              <option value="">选择显卡...</option>
+              {uninstalledCards.map((c) => {
+                const spec = getCardSpec(c.modelId);
+                return (
+                  <option key={c.uid} value={c.uid}>
+                    {spec?.name ?? c.modelId} ({c.uid.slice(-6)})
+                  </option>
+                );
+              })}
+            </select>
+            <select
+              className={styles.select}
+              value={selectedNodeId}
+              onChange={(e) => setSelectedNodeId(e.target.value)}
+            >
+              <option value="">选择节点...</option>
+              {serverNodes
+                .filter((n) => n.installedCards.length < n.slotCount)
+                .map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} ({n.installedCards.length}/{n.slotCount})
+                  </option>
+                ))}
+            </select>
+            <button
+              className={styles.btn}
+              disabled={!selectedCardUid || !selectedNodeId}
+              onClick={() => {
+                game.executeCommand(new InstallCardCommand(selectedCardUid, selectedNodeId));
+                setSelectedCardUid('');
+              }}
+            >
+              安装
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* 创建集群 */}
+      {serverNodes.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>创建集群</span>
+          </div>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel} style={{ minWidth: 0 }}>网络</span>
+            <select
+              className={styles.select}
+              value={selectedNetworkId}
+              onChange={(e) => {
+                setSelectedNetworkId(e.target.value);
+                setSelectedNodeIds(new Set());
+              }}
+            >
+              {CLUSTER_NETWORKS.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name} (+{(n.utilizationBonus * 100).toFixed(0)}% · ${n.costPerNode.toLocaleString()}/节点 · 上限 {n.maxNodes} 节点)
+                </option>
+              ))}
+            </select>
+          </div>
+          {freeNodesForCluster.length === 0 ? (
+            <div className={styles.devHint}>没有可用的独立节点</div>
+          ) : (
+            freeNodesForCluster.map((n) => {
+              const checked = selectedNodeIds.has(n.id);
+              return (
+                <label key={n.id} className={styles.devRow} style={{ cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleNodeId(n.id)}
+                    style={{ marginRight: '6px' }}
+                  />
+                  <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                    {n.name} ({n.installedCards.length}/{n.slotCount} 卡 · {n.interconnect})
+                  </span>
+                </label>
+              );
+            })
+          )}
+          <div className={styles.devRow}>
+            <span className={styles.devHint}>
+              已选 {selectedNodeIds.size} 节点 · 费用 ${clusterBuildCost.toLocaleString()}
+            </span>
+            <button
+              className={styles.btn}
+              disabled={selectedNodeIds.size === 0 || funds < clusterBuildCost}
+              onClick={() => {
+                game.executeCommand(
+                  new CreateClusterCommand(Array.from(selectedNodeIds), selectedNetworkId),
+                );
+                setSelectedNodeIds(new Set());
+              }}
+            >
+              创建集群
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* 建数据中心 */}
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>数据中心</span>
+      </div>
+      <div className={styles.devRow}>
+        <select
+          className={styles.select}
+          value={selectedLocationId}
+          onChange={(e) => setSelectedLocationId(e.target.value)}
+        >
+          {DATA_CENTER_LOCATIONS.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name} · ${l.powerCostPerKWh}/kWh · ${l.buildCostPerMW.toLocaleString()}/MW
+            </option>
+          ))}
+        </select>
+        <select
+          className={styles.select}
+          value={selectedCoolingId}
+          onChange={(e) => setSelectedCoolingId(e.target.value as 'air' | 'liquid' | 'immersion')}
+        >
+          {COOLING_TYPES.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} · PUE {c.basePUE} · +${c.extraBuildCostPerMW.toLocaleString()}/MW
+            </option>
+          ))}
+        </select>
+        <input
+          className={styles.input}
+          type="number"
+          min={0.5}
+          step={0.5}
+          value={dcPower}
+          onChange={(e) => setDcPower(Number(e.target.value))}
+          style={{ width: '60px' }}
+        />
+        <span className={styles.devHint}>MW</span>
+      </div>
+      <div className={styles.devRow}>
+        <span className={styles.devHint}>
+          建造费用 ${dcBuildCost.toLocaleString()}
+        </span>
+        <button
+          className={styles.btn}
+          disabled={funds < dcBuildCost || dcPower <= 0}
+          onClick={() => {
+            game.executeCommand(
+              new BuildDataCenterCommand(selectedLocationId, dcPower, selectedCoolingId),
+            );
+          }}
+        >
+          建造数据中心
+        </button>
+      </div>
+
+      {/* 迁移集群到数据中心 */}
+      {clusters.length > 0 && dataCenters.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>迁移集群</span>
+          </div>
+          <div className={styles.devRow}>
+            <select
+              className={styles.select}
+              value={selectedClusterId}
+              onChange={(e) => setSelectedClusterId(e.target.value)}
+            >
+              <option value="">选择集群...</option>
+              {clusters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.dataCenterId ? '(已入DC)' : ''}
+                </option>
+              ))}
+            </select>
+            <select
+              className={styles.select}
+              value={selectedDcId}
+              onChange={(e) => setSelectedDcId(e.target.value)}
+            >
+              <option value="">选择数据中心...</option>
+              {dataCenters.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className={styles.btn}
+              disabled={!selectedClusterId || !selectedDcId}
+              onClick={() => {
+                game.executeCommand(new MoveClusterCommand(selectedClusterId, selectedDcId));
+                setSelectedClusterId('');
+                setSelectedDcId('');
+              }}
+            >
+              迁入
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ============== 训练视图 ============== */
+
+function TrainingTab({ game }: { game: ReturnType<typeof useGame> }) {
+  const clusters = useGameState((s) => s.clusters);
+  const trainingProjects = useGameState((s) => s.trainingProjects);
+
+  const [modelName, setModelName] = useState('GPT-7B');
+  const [paramCount, setParamCount] = useState(7);
+  const [selectedClusterId, setSelectedClusterId] = useState('');
+  const [computeTotal, setComputeTotal] = useState(10_000);
+
+  const activeProjects = trainingProjects.filter((p) => p.status === 'training');
+  const completedProjects = trainingProjects.filter((p) => p.status === 'completed');
+
+  return (
+    <div className={styles.tabBody}>
+      {/* 启动训练 */}
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>启动训练</span>
+      </div>
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>模型名</span>
+        <input
+          className={styles.input}
+          value={modelName}
+          onChange={(e) => setModelName(e.target.value)}
+          style={{ width: '100px' }}
+        />
+        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>参数量</span>
+        <input
+          className={styles.input}
+          type="number"
+          min={1}
+          value={paramCount}
+          onChange={(e) => setParamCount(Number(e.target.value))}
+          style={{ width: '50px' }}
+        />
+        <span className={styles.devHint}>B</span>
+      </div>
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>集群</span>
+        <select
+          className={styles.select}
+          value={selectedClusterId}
+          onChange={(e) => setSelectedClusterId(e.target.value)}
+        >
+          <option value="">选择集群...</option>
+          {clusters.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({c.nodes.length} 节点)
+            </option>
+          ))}
+        </select>
+        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>总算力</span>
+        <input
+          className={styles.input}
+          type="number"
+          min={100}
+          step={1000}
+          value={computeTotal}
+          onChange={(e) => setComputeTotal(Number(e.target.value))}
+          style={{ width: '80px' }}
+        />
+        <span className={styles.devHint}>TFLOPS·天</span>
+      </div>
+      <div className={styles.devRow}>
+        <button
+          className={styles.btn}
+          disabled={!modelName || !selectedClusterId}
+          onClick={() => {
+            game.executeCommand(
+              new StartTrainingCommand(
+                modelName,
+                paramCount,
+                'transformer',
+                selectedClusterId,
+                computeTotal,
+              ),
+            );
+          }}
+        >
+          开始训练
+        </button>
+      </div>
+
+      {/* 训练中项目 */}
+      {activeProjects.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>训练中 ({activeProjects.length})</span>
+          </div>
+          {activeProjects.map((p) => {
+            const progress = ((p.computeTotal - p.computeRemaining) / p.computeTotal) * 100;
+            return (
+              <div key={p.id} className={styles.devRow}>
+                <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                  · {p.modelName} ({p.paramCount}B)
+                </span>
+                <span className={styles.devHint}>
+                  {progress.toFixed(1)}% · 剩余 {p.computeRemaining.toFixed(0)} TFLOPS·天
+                </span>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* 已完成项目 */}
+      {completedProjects.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>已完成 ({completedProjects.length})</span>
+          </div>
+          {completedProjects.map((p) => (
+            <div key={p.id} className={styles.devRow}>
+              <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                · ✓ {p.modelName} ({p.paramCount}B) · 第 {p.completedAt} 天完成
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+
+      {trainingProjects.length === 0 && (
+        <div className={styles.emptyHint}>尚无训练项目，请先创建集群并安装显卡</div>
+      )}
+    </div>
+  );
+}
