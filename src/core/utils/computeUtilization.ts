@@ -1,4 +1,5 @@
-import type { ComputeCardSpec } from '../entities/ComputeCard';
+import type { ComputeCardSpec, ComputePrecision } from '../entities/ComputeCard';
+import { getCardTflops } from '../entities/ComputeCard';
 import type { Cluster, DataCenter, TechEffect } from '../entities/Infrastructure';
 import { getCoolingType } from '../config/infrastructure';
 import { clamp } from '../utils';
@@ -27,6 +28,8 @@ export interface ModelParams {
   paramCount: number;
   /** 架构类型 */
   architecture: string;
+  /** 训练精度（不同精度下卡的理论算力不同），缺省为 bf16 */
+  precision?: ComputePrecision;
 }
 
 /**
@@ -69,8 +72,9 @@ export function calculateEffectiveCompute(
   techEffects: TechEffect[] = [],
   modelParams?: ModelParams,
 ): UtilizationResult {
-  // 理论总算力
-  const totalTflops = cardSpecs.reduce((sum, s) => sum + s.tflopsPerCard, 0);
+  // 理论总算力（按模型训练精度取每卡算力；无模型时按 bf16 基准）
+  const precision: ComputePrecision = modelParams?.precision ?? 'bf16';
+  const totalTflops = cardSpecs.reduce((sum, s) => sum + getCardTflops(s, precision), 0);
 
   if (cardSpecs.length === 0 || totalTflops === 0) {
     return {

@@ -9,7 +9,6 @@ import {
   BuildDataCenterCommand,
   MoveClusterCommand,
 } from '../../core/commands/InfraCommands';
-import { StartTrainingCommand } from '../../core/commands/TrainingCommands';
 import {
   NODE_TEMPLATES,
   CLUSTER_NETWORKS,
@@ -19,12 +18,11 @@ import {
 import { getCardSpec } from '../../core/config/computeCards';
 import styles from '../styles/App.module.css';
 
-type InfraTab = 'topology' | 'build' | 'training';
+type InfraTab = 'topology' | 'build';
 
 const INFRA_TABS: { key: InfraTab; label: string; icon: string }[] = [
   { key: 'topology', label: '拓扑', icon: '🏗️' },
   { key: 'build', label: '建造', icon: '🔨' },
-  { key: 'training', label: '训练', icon: '🎯' },
 ];
 
 export function InfrastructurePanel() {
@@ -49,7 +47,6 @@ export function InfrastructurePanel() {
 
       {tab === 'topology' && <TopologyTab />}
       {tab === 'build' && <BuildTab game={game} />}
-      {tab === 'training' && <TrainingTab game={game} />}
     </section>
   );
 }
@@ -75,6 +72,23 @@ function TopologyTab() {
       if (card) return card;
     }
     return undefined;
+  };
+
+  // 计算节点聚合显存/带宽
+  const getNodeMemory = (nodeId: string): { memoryGB: number; bandwidthGBs: number } => {
+    const node = serverNodes.find((n) => n.id === nodeId);
+    if (!node) return { memoryGB: 0, bandwidthGBs: 0 };
+    let memoryGB = 0;
+    let bandwidthGBs = 0;
+    for (const cardUid of node.installedCards) {
+      const card = getCard(cardUid);
+      const spec = card ? getCardSpec(card.modelId) : undefined;
+      if (spec) {
+        memoryGB += spec.memoryGB;
+        bandwidthGBs += spec.memoryBandwidth;
+      }
+    }
+    return { memoryGB, bandwidthGBs };
   };
 
   if (dataCenters.length === 0 && clusters.length === 0 && serverNodes.length === 0) {
@@ -106,12 +120,13 @@ function TopologyTab() {
                 {cluster.nodes.map((nodeId) => {
                   const node = serverNodes.find((n) => n.id === nodeId);
                   if (!node) return null;
+                  const { memoryGB, bandwidthGBs } = getNodeMemory(nodeId);
                   return (
                     <div key={nodeId} className={styles.treeChild}>
                       <div className={styles.devRow}>
                         <span className={styles.devRowLabel}>🖥️ {node.name}</span>
                         <span className={styles.devHint}>
-                          {node.installedCards.length}/{node.slotCount} 卡 · {node.interconnect}
+                          {node.installedCards.length}/{node.slotCount} 卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}
                         </span>
                       </div>
                       {node.installedCards.map((cardUid) => {
@@ -121,6 +136,7 @@ function TopologyTab() {
                           <div key={cardUid} className={styles.treeChild}>
                             <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
                               · {spec?.name ?? card?.modelId} ({card?.status})
+                              {spec && ` · ${spec.memoryGB}GB · ${spec.memoryBandwidth}GB/s`}
                             </span>
                           </div>
                         );
@@ -146,12 +162,13 @@ function TopologyTab() {
           {cluster.nodes.map((nodeId) => {
             const node = serverNodes.find((n) => n.id === nodeId);
             if (!node) return null;
+            const { memoryGB, bandwidthGBs } = getNodeMemory(nodeId);
             return (
               <div key={nodeId} className={styles.treeChild}>
                 <div className={styles.devRow}>
                   <span className={styles.devRowLabel}>🖥️ {node.name}</span>
                   <span className={styles.devHint}>
-                    {node.installedCards.length}/{node.slotCount} 卡
+                    {node.installedCards.length}/{node.slotCount} 卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}
                   </span>
                 </div>
               </div>
@@ -166,21 +183,24 @@ function TopologyTab() {
           <div className={styles.devRow}>
             <span className={styles.devRowLabel}>独立节点（未加入集群）</span>
           </div>
-          {freeNodes.map((node) => (
-            <div key={node.id} className={styles.treeChild}>
-              <div className={styles.devRow}>
-                <span className={styles.devRowLabel}>🖥️ {node.name}</span>
-                <span className={styles.devHint}>
-                  {node.installedCards.length}/{node.slotCount} 卡 · {node.interconnect}
-                </span>
-              </div>
-              {node.installedCards.length < node.slotCount && (
-                <div className={styles.devHint} style={{ paddingLeft: '20px' }}>
-                  可安装 {node.slotCount - node.installedCards.length} 张卡
+          {freeNodes.map((node) => {
+            const { memoryGB, bandwidthGBs } = getNodeMemory(node.id);
+            return (
+              <div key={node.id} className={styles.treeChild}>
+                <div className={styles.devRow}>
+                  <span className={styles.devRowLabel}>🖥️ {node.name}</span>
+                  <span className={styles.devHint}>
+                    {node.installedCards.length}/{node.slotCount} 卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}
+                  </span>
                 </div>
-              )}
-            </div>
-          ))}
+                {node.installedCards.length < node.slotCount && (
+                  <div className={styles.devHint} style={{ paddingLeft: '20px' }}>
+                    可安装 {node.slotCount - node.installedCards.length} 张卡
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -266,19 +286,21 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
         </div>
       ))}
 
-      {/* 安装卡到节点 */}
+      {/* 安装卡到节点（批量） */}
       {serverNodes.length > 0 && uninstalledCards.length > 0 && (
         <>
           <div className={styles.devRow}>
-            <span className={styles.devRowLabel}>安装显卡</span>
+            <span className={styles.devRowLabel}>批量安装显卡</span>
           </div>
+
+          {/* 单卡安装（保留原能力） */}
           <div className={styles.devRow}>
             <select
               className={styles.select}
               value={selectedCardUid}
               onChange={(e) => setSelectedCardUid(e.target.value)}
             >
-              <option value="">选择显卡...</option>
+              <option value="">选择单张显卡...</option>
               {uninstalledCards.map((c) => {
                 const spec = getCardSpec(c.modelId);
                 return (
@@ -313,6 +335,9 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
               安装
             </button>
           </div>
+
+          {/* 批量安装：按型号填数量，自动分配到指定节点 */}
+          <BatchInstallCards game={game} />
         </>
       )}
 
@@ -483,132 +508,95 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
   );
 }
 
-/* ============== 训练视图 ============== */
+/* ============== 批量安装显卡 ============== */
 
-function TrainingTab({ game }: { game: ReturnType<typeof useGame> }) {
-  const clusters = useGameState((s) => s.clusters);
-  const trainingProjects = useGameState((s) => s.trainingProjects);
+function BatchInstallCards({ game }: { game: ReturnType<typeof useGame> }) {
+  const serverNodes = useGameState((s) => s.serverNodes);
+  const resourceMeta = useGameState((s) => s.resourceMeta);
+  const [selectedModelId, setSelectedModelId] = useState('');
+  const [installQty, setInstallQty] = useState(1);
+  const [targetNodeId, setTargetNodeId] = useState('');
 
-  const [modelName, setModelName] = useState('GPT-7B');
-  const [paramCount, setParamCount] = useState(7);
-  const [selectedClusterId, setSelectedClusterId] = useState('');
-  const [computeTotal, setComputeTotal] = useState(10_000);
+  // 未安装的卡按型号分组
+  const uninstalledByModel: Record<string, CardInstance[]> = {};
+  for (const modelId of Object.keys(resourceMeta)) {
+    const pool = resourceMeta[modelId] as CardInstance[] | undefined;
+    if (!pool) continue;
+    for (const card of pool) {
+      if (card.location === null && card.status === 'online') {
+        if (!uninstalledByModel[modelId]) uninstalledByModel[modelId] = [];
+        uninstalledByModel[modelId].push(card);
+      }
+    }
+  }
 
-  const activeProjects = trainingProjects.filter((p) => p.status === 'training');
-  const completedProjects = trainingProjects.filter((p) => p.status === 'completed');
+  const targetNode = serverNodes.find((n) => n.id === targetNodeId);
+  const availableSlots = targetNode ? targetNode.slotCount - targetNode.installedCards.length : 0;
+  const availableCards = uninstalledByModel[selectedModelId]?.length ?? 0;
+  const actualQty = Math.min(installQty, availableCards, availableSlots > 0 ? availableSlots : 0);
+
+  const handleBatchInstall = () => {
+    if (!targetNode) return;
+    const cards = uninstalledByModel[selectedModelId] ?? [];
+    for (let i = 0; i < actualQty; i++) {
+      game.executeCommand(new InstallCardCommand(cards[i].uid, targetNodeId));
+    }
+    setInstallQty(1);
+  };
 
   return (
-    <div className={styles.tabBody}>
-      {/* 启动训练 */}
-      <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>启动训练</span>
-      </div>
-      <div className={styles.devRow}>
-        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>模型名</span>
-        <input
-          className={styles.input}
-          value={modelName}
-          onChange={(e) => setModelName(e.target.value)}
-          style={{ width: '100px' }}
-        />
-        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>参数量</span>
-        <input
-          className={styles.input}
-          type="number"
-          min={1}
-          value={paramCount}
-          onChange={(e) => setParamCount(Number(e.target.value))}
-          style={{ width: '50px' }}
-        />
-        <span className={styles.devHint}>B</span>
-      </div>
-      <div className={styles.devRow}>
-        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>集群</span>
-        <select
-          className={styles.select}
-          value={selectedClusterId}
-          onChange={(e) => setSelectedClusterId(e.target.value)}
-        >
-          <option value="">选择集群...</option>
-          {clusters.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} ({c.nodes.length} 节点)
+    <div className={styles.devRow} style={{ flexWrap: 'wrap', gap: '8px' }}>
+      <select
+        className={styles.select}
+        value={selectedModelId}
+        onChange={(e) => setSelectedModelId(e.target.value)}
+      >
+        <option value="">选择型号...</option>
+        {Object.keys(uninstalledByModel).map((modelId) => (
+          <option key={modelId} value={modelId}>
+            {getCardSpec(modelId)?.name ?? modelId}（闲置 {uninstalledByModel[modelId].length} 张）
+          </option>
+        ))}
+      </select>
+
+      <input
+        className={styles.input}
+        type="number"
+        min={1}
+        step={1}
+        value={installQty}
+        onChange={(e) => setInstallQty(Math.max(1, Number(e.target.value)))}
+        style={{ width: '60px' }}
+      />
+      <span className={styles.devHint}>张</span>
+
+      <select
+        className={styles.select}
+        value={targetNodeId}
+        onChange={(e) => setTargetNodeId(e.target.value)}
+      >
+        <option value="">选择目标节点...</option>
+        {serverNodes
+          .filter((n) => n.installedCards.length < n.slotCount)
+          .map((n) => (
+            <option key={n.id} value={n.id}>
+              {n.name}（空 {n.slotCount - n.installedCards.length}/{n.slotCount}）
             </option>
           ))}
-        </select>
-        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>总算力</span>
-        <input
-          className={styles.input}
-          type="number"
-          min={100}
-          step={1000}
-          value={computeTotal}
-          onChange={(e) => setComputeTotal(Number(e.target.value))}
-          style={{ width: '80px' }}
-        />
-        <span className={styles.devHint}>TFLOPS·天</span>
-      </div>
-      <div className={styles.devRow}>
-        <button
-          className={styles.btn}
-          disabled={!modelName || !selectedClusterId}
-          onClick={() => {
-            game.executeCommand(
-              new StartTrainingCommand(
-                modelName,
-                paramCount,
-                'transformer',
-                selectedClusterId,
-                computeTotal,
-              ),
-            );
-          }}
-        >
-          开始训练
-        </button>
-      </div>
+      </select>
 
-      {/* 训练中项目 */}
-      {activeProjects.length > 0 && (
-        <>
-          <div className={styles.devRow}>
-            <span className={styles.devRowLabel}>训练中 ({activeProjects.length})</span>
-          </div>
-          {activeProjects.map((p) => {
-            const progress = ((p.computeTotal - p.computeRemaining) / p.computeTotal) * 100;
-            return (
-              <div key={p.id} className={styles.devRow}>
-                <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
-                  · {p.modelName} ({p.paramCount}B)
-                </span>
-                <span className={styles.devHint}>
-                  {progress.toFixed(1)}% · 剩余 {p.computeRemaining.toFixed(0)} TFLOPS·天
-                </span>
-              </div>
-            );
-          })}
-        </>
-      )}
-
-      {/* 已完成项目 */}
-      {completedProjects.length > 0 && (
-        <>
-          <div className={styles.devRow}>
-            <span className={styles.devRowLabel}>已完成 ({completedProjects.length})</span>
-          </div>
-          {completedProjects.map((p) => (
-            <div key={p.id} className={styles.devRow}>
-              <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
-                · ✓ {p.modelName} ({p.paramCount}B) · 第 {p.completedAt} 天完成
-              </span>
-            </div>
-          ))}
-        </>
-      )}
-
-      {trainingProjects.length === 0 && (
-        <div className={styles.emptyHint}>尚无训练项目，请先创建集群并安装显卡</div>
-      )}
+      <button
+        className={styles.btn}
+        disabled={actualQty <= 0}
+        onClick={handleBatchInstall}
+      >
+        批量安装
+        {actualQty > 0 && actualQty !== installQty && (
+          <span className={styles.devHint}>（实际可装 {actualQty} 张）</span>
+        )}
+      </button>
     </div>
   );
 }
+
+

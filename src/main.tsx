@@ -8,7 +8,11 @@ import { PowerSystem } from './core/systems/PowerSystem';
 import { StaffSystem } from './core/systems/StaffSystem';
 import { TrainingSystem } from './core/systems/TrainingSystem';
 import { InfraMaintenanceSystem } from './core/systems/InfraMaintenanceSystem';
+import { TrainingPipelineSystem } from './core/systems/TrainingPipelineSystem';
+import { BenchmarkSystem } from './core/systems/BenchmarkSystem';
+import { CompetitorEventSystem } from './core/systems/CompetitorEventSystem';
 import { INITIAL_RESOURCES } from './core/config/resources';
+import { generateArchMatrix } from './core/config/architectures';
 import { GameProvider } from './ui/context/GameContext';
 import { App } from './ui/components/App';
 
@@ -33,11 +37,20 @@ const initialData: GameData = {
   resourceMeta: {},
   pendingOrders: [],
   employees: [],
-  models: [],
   serverNodes: [],
   clusters: [],
   dataCenters: [],
   trainingProjects: [],
+  // ===== 大模型训练系统 =====
+  models: [],
+  archMatrix: generateArchMatrix(),
+  benchmarkResults: [],
+  hiddenDimSignals: [],
+  triggeredEvents: [],
+  revealedHiddenDims: [],
+  marketPressure: 0,
+  totalUsers: 0,
+  brandReputation: 50,
   activeTechEffects: [],
 };
 
@@ -52,6 +65,9 @@ const systems = [
   new StaffSystem(),
   new TrainingSystem(),
   new InfraMaintenanceSystem(),
+  new TrainingPipelineSystem(),
+  new BenchmarkSystem(),
+  new CompetitorEventSystem(),
 ];
 
 // 3. 创建 Game，传入 registry（Game 内部会再次 registerAll，幂等）

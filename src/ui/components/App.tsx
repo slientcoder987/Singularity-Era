@@ -4,6 +4,8 @@ import { GameControls, type PanelView } from './GameControls';
 import { ResourceDevPanel } from './ResourceDevPanel';
 import { EmployeePanel } from './EmployeePanel';
 import { InfrastructurePanel } from './InfrastructurePanel';
+// 模型面板模块待实现
+import { ModelPanel } from './ModelPanel';
 import styles from '../styles/App.module.css';
 
 /**
@@ -35,6 +37,12 @@ export function App() {
       {activeView === 'infrastructure' && (
         <main className={styles.pageMain}>
           <InfrastructurePanel />
+        </main>
+      )}
+
+      {activeView === 'models' && (
+        <main className={styles.pageMain}>
+          <ModelPanel />
         </main>
       )}
 

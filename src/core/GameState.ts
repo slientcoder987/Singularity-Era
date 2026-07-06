@@ -4,6 +4,11 @@ import type { ResourceDefinition } from './resources/ResourceTypes';
 import type { Employee } from './entities/Employee';
 import type { ServerNode, Cluster, DataCenter, TechEffect } from './entities/Infrastructure';
 import type { TrainingProject } from './entities/TrainingProject';
+import type { ModelEntity } from './entities/ModelEntity';
+import type { BenchmarkResult, HiddenDimSignal } from './entities/Benchmark';
+import type { TriggeredCompetitorEvent } from './entities/CompetitorEvent';
+import type { ArchCapabilityMatrix } from './config/architectures';
+import type { CapabilityDim } from './config/capabilityDims';
 
 /**
  * 硬件采购订单
@@ -58,8 +63,6 @@ export interface GameData {
 
   /** 员工列表 */
   employees: Employee[];
-  /** 模型列表（占位，后续扩展） */
-  models: any[];
 
   // ===== 基础设施层级 =====
   /** 服务器节点列表 */
@@ -70,8 +73,28 @@ export interface GameData {
   dataCenters: DataCenter[];
 
   // ===== 训练系统 =====
-  /** 训练项目列表 */
+  /** 训练项目列表（旧系统，保留兼容） */
   trainingProjects: TrainingProject[];
+
+  // ===== 大模型训练系统 =====
+  /** 模型实体列表 */
+  models: ModelEntity[];
+  /** 本局架构-能力映射矩阵 */
+  archMatrix: ArchCapabilityMatrix;
+  /** 所有 benchmark 评估记录 */
+  benchmarkResults: BenchmarkResult[];
+  /** 隐性维度模糊信号列表 */
+  hiddenDimSignals: HiddenDimSignal[];
+  /** 已触发的竞品事件列表 */
+  triggeredEvents: TriggeredCompetitorEvent[];
+  /** 已通过科技解锁可见的隐性维度 */
+  revealedHiddenDims: CapabilityDim[];
+  /** 当前市场压力 0-1 */
+  marketPressure: number;
+  /** 总用户数 */
+  totalUsers: number;
+  /** 品牌声誉 0-100 */
+  brandReputation: number;
 
   // ===== 科技效果（预留，后续科研系统填充） =====
   /** 当前激活的科技效果列表 */

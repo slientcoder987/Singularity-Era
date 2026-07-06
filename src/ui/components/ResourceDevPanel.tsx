@@ -8,6 +8,7 @@ import {
   COMPUTE_CARD_SPECS,
   getCardSpec,
 } from '../../core/config/computeCards';
+import { getCardTflops, type ComputePrecision } from '../../core/entities/ComputeCard';
 import {
   POWER_CONFIG,
 } from '../../core/config/resources';
@@ -182,32 +183,79 @@ function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
 
 /* ============== 算力 ============== */
 
+const PRECISION_OPTIONS: { key: ComputePrecision; label: string }[] = [
+  { key: 'fp32', label: 'FP32' },
+  { key: 'bf16', label: 'BF16' },
+  { key: 'fp8', label: 'FP8' },
+  { key: 'int4', label: 'INT4' },
+];
+
 function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
   const resources = useGameState((s) => s.resources);
-  const computePower = resources['compute_power'] ?? 0;
   const hardwareDefs = game.registry.getByCategory('hardware');
+  // 算力显示精度（可切换）。compute_power 资源以 BF16 基准统计，
+  // 切换精度后按卡数 × 该精度单卡算力重新汇总展示。
+  const [displayPrecision, setDisplayPrecision] = useState<ComputePrecision>('bf16');
+  // 批量购买数量（按硬件型号 id 记录）
+  const [buyQuantities, setBuyQuantities] = useState<Record<string, number>>(() => {
+    const init: Record<string, number> = {};
+    for (const def of hardwareDefs) init[def.id] = 1;
+    return init;
+  });
 
-  // 总在线卡数
+  // 总在线卡数 / 显存 / 带宽
   let totalCards = 0;
   let totalOnlineCards = 0;
+  let totalMemoryGB = 0;
+  let totalBandwidthGBs = 0;
+  let totalTflopsAtPrecision = 0;
   for (const def of hardwareDefs) {
     const count = resources[def.id] ?? 0;
     totalCards += count;
     totalOnlineCards += count; // 简化：所有卡默认在线（损坏的由系统扣除）
+    const spec = getCardSpec(def.id);
+    if (spec) {
+      totalMemoryGB += count * spec.memoryGB;
+      totalBandwidthGBs += count * spec.memoryBandwidth;
+      totalTflopsAtPrecision += count * getCardTflops(spec, displayPrecision);
+    }
   }
 
   return (
     <div className={styles.tabBody}>
       <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>总算力</span>
+        <span className={styles.devRowLabel}>显示精度</span>
+        {PRECISION_OPTIONS.map((p) => (
+          <button
+            key={p.key}
+            className={`${styles.empFilterBtn} ${displayPrecision === p.key ? styles.empFilterBtnActive : ''}`}
+            onClick={() => setDisplayPrecision(p.key)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>总算力（{displayPrecision.toUpperCase()}）</span>
         <span className={styles.statValue} style={{ color: '#a78bfa', fontSize: '18px' }}>
-          {formatResourceValue(computePower, 'tflops')}
+          {formatResourceValue(totalTflopsAtPrecision, 'tflops')}
         </span>
       </div>
 
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>显卡总数</span>
         <span className={styles.devHint}>{totalCards} 张（在线 {totalOnlineCards} 张）</span>
+      </div>
+
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>总显存</span>
+        <span className={styles.devHint}>{totalMemoryGB.toLocaleString()} GB</span>
+      </div>
+
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>总带宽</span>
+        <span className={styles.devHint}>{totalBandwidthGBs.toLocaleString()} GB/s</span>
       </div>
 
       <div className={styles.devRow}>
@@ -220,23 +268,48 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
         hardwareDefs.map((def) => {
           const spec = getCardSpec(def.id);
           const cardCount = resources[def.id] ?? 0;
-          const tflopsContribution = spec ? cardCount * spec.tflopsPerCard : 0;
+          const tflopsContribution = spec ? cardCount * getCardTflops(spec, displayPrecision) : 0;
+          const perCard = spec ? getCardTflops(spec, displayPrecision) : 0;
+          const buyQty = buyQuantities[def.id] ?? 1;
+          const unitCost = spec?.unitCost ?? 0;
+          const totalCost = unitCost * buyQty;
+          const canAfford = (resources['funds'] ?? 0) >= totalCost;
           return (
-            <div key={def.id} className={styles.devRow}>
+            <div key={def.id} className={styles.devRow} style={{ flexWrap: 'wrap', gap: '8px' }}>
               <span className={styles.devRowLabel}>{def.uiConfig?.icon} {def.name}</span>
               <span className={styles.devHint}>
                 {cardCount} 张 · {formatResourceValue(tflopsContribution, 'tflops')}
-                {spec && ` · 单卡 ${spec.tflopsPerCard.toLocaleString()} TFLOPS · ${spec.powerPerCard} kW`}
+                {spec &&
+                  ` · 单卡 ${perCard.toLocaleString()} TFLOPS · ${spec.memoryGB}GB · ${spec.memoryBandwidth}GB/s · ${spec.powerPerCard}kW`}
               </span>
-              <button
-                className={styles.btn}
-                onClick={() => game.executeCommand(new PurchaseHardwareCommand(def.id, 1))}
-              >
-                买 1 张
-                <span className={styles.devHint}>
-                  （${spec?.unitCost.toLocaleString()} · {spec?.deliveryDays}天）
-                </span>
-              </button>
+              <div className={styles.devRow} style={{ marginLeft: 'auto', gap: '4px' }}>
+                <input
+                  className={styles.input}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={buyQty}
+                  onChange={(e) =>
+                    setBuyQuantities((prev) => ({
+                      ...prev,
+                      [def.id]: Math.max(1, Number(e.target.value)),
+                    }))
+                  }
+                  style={{ width: '50px' }}
+                />
+                <button
+                  className={styles.btn}
+                  disabled={!canAfford}
+                  onClick={() => {
+                    game.executeCommand(new PurchaseHardwareCommand(def.id, buyQty));
+                  }}
+                >
+                  购买
+                  <span className={styles.devHint}>
+                    （${totalCost.toLocaleString()} · {spec?.deliveryDays}天）
+                  </span>
+                </button>
+              </div>
             </div>
           );
         })
