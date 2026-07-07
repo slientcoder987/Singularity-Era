@@ -7,6 +7,7 @@
 
 import type { CapabilityVector } from '../config/capabilityDims';
 import type { TrainingStageId } from '../config/trainingStages';
+import type { ParallelConfig } from '../utils/parallelStrategy';
 
 /** Checkpoint 快照 */
 export interface Checkpoint {
@@ -43,6 +44,10 @@ export interface ModelTrainingConfig {
   stageBudgetAllocation: Record<TrainingStageId, number>;
   /** 总训练步数目标 */
   totalStepsTarget: number;
+  /** 训练使用的数据集 id 列表 */
+  datasetIds: string[];
+  /** 并行配置 */
+  parallelConfig: ParallelConfig;
 }
 
 /** 模型状态 */
@@ -81,6 +86,8 @@ export interface ModelEntity {
   hasCrashed: boolean;
   /** 训练中断原因 */
   pauseReason: string | null;
+  /** 已触发的涌现规则 id 列表（每规则每模型只触发一次） */
+  triggeredEmergenceRules: string[];
 }
 
 /** 生成唯一 id */
@@ -127,6 +134,7 @@ export function createModel(
     releasedCapabilities: null,
     hasCrashed: false,
     pauseReason: null,
+    triggeredEmergenceRules: [],
   };
 }
 

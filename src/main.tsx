@@ -11,6 +11,10 @@ import { InfraMaintenanceSystem } from './core/systems/InfraMaintenanceSystem';
 import { TrainingPipelineSystem } from './core/systems/TrainingPipelineSystem';
 import { BenchmarkSystem } from './core/systems/BenchmarkSystem';
 import { CompetitorEventSystem } from './core/systems/CompetitorEventSystem';
+import { DataMaintenanceSystem } from './core/systems/DataMaintenanceSystem';
+import { TechResearchSystem } from './core/systems/TechResearchSystem';
+import { MarketSystem } from './core/systems/MarketSystem';
+import { CrisisEventSystem } from './core/systems/CrisisEventSystem';
 import { INITIAL_RESOURCES } from './core/config/resources';
 import { generateArchMatrix } from './core/config/architectures';
 import { GameProvider } from './ui/context/GameContext';
@@ -52,6 +56,18 @@ const initialData: GameData = {
   totalUsers: 0,
   brandReputation: 50,
   activeTechEffects: [],
+  // ===== P1 新增 =====
+  datasets: [],
+  researchProjects: [],
+  completedTechs: [],
+  activeCrises: [],
+  trainingLogs: [],
+  pricingStrategy: 'free',
+  monthlyRevenue: 0,
+  monthlyCost: 0,
+  userSegments: { enterprise: 0, developer: 0, personal: 0 },
+  reputation: 50,
+  bestReleasedModelId: null,
 };
 
 // 1. 先创建 registry 并注册资源
@@ -68,6 +84,10 @@ const systems = [
   new TrainingPipelineSystem(),
   new BenchmarkSystem(),
   new CompetitorEventSystem(),
+  new DataMaintenanceSystem(),
+  new TechResearchSystem(),
+  new MarketSystem(),
+  new CrisisEventSystem(),
 ];
 
 // 3. 创建 Game，传入 registry（Game 内部会再次 registerAll，幂等）

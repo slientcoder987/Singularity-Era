@@ -9,6 +9,11 @@ import type { BenchmarkResult, HiddenDimSignal } from './entities/Benchmark';
 import type { TriggeredCompetitorEvent } from './entities/CompetitorEvent';
 import type { ArchCapabilityMatrix } from './config/architectures';
 import type { CapabilityDim } from './config/capabilityDims';
+import type { Dataset } from './entities/Dataset';
+import type { ResearchProject } from './entities/ResearchProject';
+import type { ActiveCrisis } from './entities/ActiveCrisis';
+import type { TrainingLogEntry } from './entities/TrainingLog';
+import type { PricingStrategy } from './commands/MarketCommands';
 
 /**
  * 硬件采购订单
@@ -99,6 +104,34 @@ export interface GameData {
   // ===== 科技效果（预留，后续科研系统填充） =====
   /** 当前激活的科技效果列表 */
   activeTechEffects: TechEffect[];
+
+  // ===== P1 新增 =====
+  /** 数据集列表 */
+  datasets: Dataset[];
+  /** 研发项目列表 */
+  researchProjects: ResearchProject[];
+  /** 已完成科技 id */
+  completedTechs: string[];
+  /** 活跃危机事件列表 */
+  activeCrises: ActiveCrisis[];
+  /** 训练日志 */
+  trainingLogs: TrainingLogEntry[];
+  /** 定价策略 */
+  pricingStrategy: PricingStrategy;
+  /** 月收入 */
+  monthlyRevenue: number;
+  /** 月成本 */
+  monthlyCost: number;
+  /** 用户细分 */
+  userSegments: {
+    enterprise: number;
+    developer: number;
+    personal: number;
+  };
+  /** 口碑 0-100 */
+  reputation: number;
+  /** 最佳已发布模型 id */
+  bestReleasedModelId: string | null;
 }
 
 /** 状态变更监听器 */

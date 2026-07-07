@@ -88,4 +88,7 @@ export type TechEffect =
   | { type: 'improve_utilization'; value: number }
   | { type: 'unlock_cluster_network'; targetId: string }
   | { type: 'reduce_cooling_pue'; value: number }
-  | { type: 'improve_parallel_efficiency'; value: number };
+  | { type: 'improve_parallel_efficiency'; value: number }
+  // ===== P1 新增 =====
+  | { type: 'reduce_crash_probability'; value: number }
+  | { type: 'improve_data_quality'; value: number };

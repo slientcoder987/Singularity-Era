@@ -2,12 +2,13 @@
  * TrainingPipelineSystem
  *
  * 每日推进所有训练中的模型：
- * 1. 计算当日有效算力（复用 calculateEffectiveCompute）
- * 2. 按 stageBudgetAllocation 分配 FLOPs 到各阶段
- * 3. 按阶段 capabilityGains × archMatrix 系数 提升能力
- * 4. 更新 loss（越来越平缓）
- * 5. 检查训练稳定性（训爆概率）
- * 6. 生成隐性维度模糊信号
+ * 1. 计算当日有效算力（含并行效率）
+ * 2. 按阶段分配 FLOPs，推进步数
+ * 3. 能力提升（受数据质量/多样性/时效性/领域覆盖加成）
+ * 4. 更新 loss
+ * 5. 检查涌现规则
+ * 6. 检查训练稳定性（含科技崩溃减免）
+ * 7. 记录训练日志
  */
 
 import type { GameState, CardInstance } from '../GameState';
@@ -20,6 +21,13 @@ import {
   type ModelParams,
 } from '../utils/computeUtilization';
 import {
+  computeParallelEfficiency,
+} from '../utils/parallelStrategy';
+import {
+  computeDataFactor,
+  getDimDomainBoost,
+} from '../utils/dataFactor';
+import {
   getStageConfig,
   getNextStage,
 } from '../config/trainingStages';
@@ -29,6 +37,9 @@ import {
 } from '../config/capabilityDims';
 import { getCombinedArchMultiplier, getArchitecture } from '../config/architectures';
 import { getParamSize } from '../config/paramSizes';
+import { EMERGENCE_RULES, checkEmergence } from '../config/emergence';
+import { createLogEntry } from '../entities/TrainingLog';
+import type { ParallelStrategy } from '../config/techTree';
 import { clamp } from '../utils';
 
 export class TrainingPipelineSystem implements System {
@@ -42,6 +53,7 @@ export class TrainingPipelineSystem implements System {
     const matrix = current.archMatrix;
     const crashed: Array<{ id: string; name: string; reason: string }> = [];
     const progress: Array<{ id: string; name: string; step: number; loss: number }> = [];
+    const emerged: Array<{ modelId: string; ruleId: string; description: string }> = [];
 
     state.update((draft) => {
       for (const model of draft.models) {
@@ -68,6 +80,15 @@ export class TrainingPipelineSystem implements System {
           precision: model.config.precision,
         };
 
+        // ===== 并行效率 =====
+        const unlockedStrategies = this.getUnlockedStrategies(draft.completedTechs);
+        const parallelResult = computeParallelEfficiency(
+          model.config.parallelConfig,
+          cardSpecs.length,
+          unlockedStrategies,
+        );
+
+        // 有效算力（含并行效率）
         const result = calculateEffectiveCompute(
           cardSpecs,
           cluster,
@@ -76,9 +97,9 @@ export class TrainingPipelineSystem implements System {
           modelParams,
         );
 
-        // 当日有效算力（TFLOPS·天）
-        const dailyTflopsDays = result.effectiveTflops * deltaDays;
-        // 转换为 FLOPs（1 TFLOPS = 1e12 FLOPS，1 天 = 86400 秒）
+        // 当日有效算力（乘以并行效率）
+        const effectiveTflops = result.effectiveTflops * parallelResult.efficiency;
+        const dailyTflopsDays = effectiveTflops * deltaDays;
         const dailyFlops = dailyTflopsDays * 1e12 * 86400;
 
         // ===== 训练步数推进 =====
@@ -88,13 +109,20 @@ export class TrainingPipelineSystem implements System {
         model.currentStep += stepsAdvanced;
         model.flopsInvested += dailyFlops;
 
+        // ===== 数据因子 =====
+        const modelDatasets = draft.datasets.filter((d) => model.config.datasetIds.includes(d.id));
+        const dataFactor = computeDataFactor(modelDatasets, model.currentStage);
+        // 科技数据质量加成
+        let dataQualityBonus = 0;
+        for (const eff of draft.activeTechEffects) {
+          if (eff.type === 'improve_data_quality') dataQualityBonus += eff.value;
+        }
+        const qualityFactor = clamp(dataFactor.qualityFactor + dataQualityBonus, 0.3, 2.0);
+
         // ===== 能力提升 =====
         const stageConfig = getStageConfig(model.currentStage);
         if (stageConfig) {
-          // 整个训练周期内单维度的目标提升上限
-          // 与绝对 FLOPs 解耦：无论算力多大，总提升有上限；大算力只是更快达到上限
           const CAP_PER_DIM = 80;
-          // 当日步数占总训练目标的比例（即当日训练进度）
           const dayProgressRatio = stepsAdvanced / Math.max(1, model.config.totalStepsTarget);
 
           for (const [dimStr, baseGain] of Object.entries(stageConfig.capabilityGains)) {
@@ -102,20 +130,32 @@ export class TrainingPipelineSystem implements System {
             const archMul = getCombinedArchMultiplier(matrix, model.config.architectureIds, dim);
             const isHidden = HIDDEN_DIMS.includes(dim);
             const hiddenWeight = isHidden ? stageConfig.hiddenDimWeight : 1.0;
+            const domainBoost = getDimDomainBoost(dataFactor, dim);
+            // 隐性维度额外乘 diversityFactor
+            const diversityMul = isHidden ? dataFactor.diversityFactor : 1.0;
 
-            // 能力提升 = baseGain × archMul × hiddenWeight × CAP × 当日进度比例
-            const delta = (baseGain ?? 0) * archMul * hiddenWeight * CAP_PER_DIM * dayProgressRatio * deltaDays;
+            const delta =
+              (baseGain ?? 0) *
+              archMul *
+              hiddenWeight *
+              CAP_PER_DIM *
+              dayProgressRatio *
+              deltaDays *
+              qualityFactor *
+              dataFactor.freshnessFactor *
+              domainBoost *
+              diversityMul;
             model.capabilities[dim] = clamp(model.capabilities[dim] + delta, 0, 100);
           }
         }
 
-        // ===== loss 更新（指数衰减） =====
+        // ===== loss 更新 =====
         const convergenceRate = stageConfig?.lossConvergenceRate ?? 1.0;
         const progressRatio = model.currentStep / model.config.totalStepsTarget;
         const baseLoss = stageConfig?.baseLoss ?? 4.0;
         model.currentLoss = baseLoss * Math.exp(-convergenceRate * progressRatio * 3);
 
-        // ===== 阶段切换：当 loss 低于阈值时自动进入下一阶段 =====
+        // ===== 阶段切换 =====
         const lossThreshold = (stageConfig?.baseLoss ?? 4.0) * 0.15;
         if (model.currentLoss < lossThreshold) {
           const nextStage = getNextStage(model.currentStage);
@@ -124,6 +164,34 @@ export class TrainingPipelineSystem implements System {
             const nextConfig = getStageConfig(nextStage);
             if (nextConfig) model.currentLoss = nextConfig.baseLoss;
             events.emit('STAGE_CHANGED', model.id, nextStage);
+            draft.trainingLogs.push(
+              createLogEntry(draft.date, model.id, 'stage_transition', `进入阶段：${nextStage}`),
+            );
+          }
+        }
+
+        // ===== 涌现检测 =====
+        const paramB = paramSizeCfg?.paramCountB ?? 7;
+        for (const rule of EMERGENCE_RULES) {
+          if (model.triggeredEmergenceRules.includes(rule.id)) continue;
+          if (checkEmergence(rule, paramB, model.currentStep, model.currentStage, model.capabilities)) {
+            model.triggeredEmergenceRules.push(rule.id);
+            // 应用涌现效果
+            if (rule.effect.capabilityBoost) {
+              for (const [dim, boost] of Object.entries(rule.effect.capabilityBoost)) {
+                const d = dim as CapabilityDim;
+                model.capabilities[d] = clamp(model.capabilities[d] + (boost ?? 0), 0, 100);
+              }
+            }
+            if (rule.effect.revealHiddenDim) {
+              const revealedSet = new Set(draft.revealedHiddenDims);
+              revealedSet.add(rule.effect.revealHiddenDim);
+              draft.revealedHiddenDims = Array.from(revealedSet);
+            }
+            emerged.push({ modelId: model.id, ruleId: rule.id, description: rule.description });
+            draft.trainingLogs.push(
+              createLogEntry(draft.date, model.id, 'emergence', rule.description),
+            );
           }
         }
 
@@ -134,16 +202,21 @@ export class TrainingPipelineSystem implements System {
           if (arch) stabilityImpactSum += arch.stabilityImpact;
         }
         const paramRisk = paramSizeCfg?.baseStabilityRisk ?? 0.05;
-        const crashProbability = clamp(
+        let crashProbability = clamp(
           paramRisk * (1 + stabilityImpactSum) * (1 + progressRatio * 0.5),
           0,
           0.5,
         );
-
+        // 科技减免
+        for (const eff of draft.activeTechEffects) {
+          if (eff.type === 'reduce_crash_probability') {
+            crashProbability *= (1 - eff.value);
+          }
+        }
+        crashProbability = clamp(crashProbability, 0, 0.5);
         model.stabilityRisk = crashProbability;
 
         if (Math.random() < crashProbability * deltaDays) {
-          // 训爆！回退到上一个 checkpoint
           const lastCheckpoint = model.checkpoints[model.checkpoints.length - 1];
           if (lastCheckpoint) {
             model.capabilities = { ...lastCheckpoint.capabilities };
@@ -155,41 +228,51 @@ export class TrainingPipelineSystem implements System {
             model.hasCrashed = true;
             model.status = 'paused';
             model.pauseReason = '训练不稳定，已回退到上一个 checkpoint';
-            crashed.push({
-              id: model.id,
-              name: model.name,
-              reason: '训练不稳定（训爆）',
-            });
+            crashed.push({ id: model.id, name: model.name, reason: '训练不稳定（训爆）' });
+            draft.trainingLogs.push(
+              createLogEntry(draft.date, model.id, 'crash', '训练崩溃，回退到上个 checkpoint'),
+            );
           } else {
-            // 无 checkpoint，严重损失
             model.flopsInvested *= 0.5;
             model.hasCrashed = true;
             model.status = 'paused';
             model.pauseReason = '训练不稳定且无 checkpoint，损失 50% FLOPs';
-            crashed.push({
-              id: model.id,
-              name: model.name,
-              reason: '训练不稳定（无 checkpoint 回退）',
-            });
+            crashed.push({ id: model.id, name: model.name, reason: '训练不稳定（无 checkpoint）' });
+            draft.trainingLogs.push(
+              createLogEntry(draft.date, model.id, 'crash', '训练崩溃，无 checkpoint，损失 50%'),
+            );
           }
           continue;
         }
 
-        progress.push({
-          id: model.id,
-          name: model.name,
-          step: model.currentStep,
-          loss: model.currentLoss,
-        });
+        // ===== 记录每日训练日志（每 5 天记一次以减少日志量） =====
+        if (draft.date % 5 === 0) {
+          draft.trainingLogs.push(
+            createLogEntry(draft.date, model.id, 'daily_progress', `步数 ${model.currentStep}，loss ${model.currentLoss.toFixed(3)}`, {
+              steps: model.currentStep,
+              loss: model.currentLoss,
+            }),
+          );
+        }
+
+        progress.push({ id: model.id, name: model.name, step: model.currentStep, loss: model.currentLoss });
       }
     });
 
-    for (const c of crashed) {
-      events.emit('MODEL_CRASHED', c.id, c.name, c.reason);
+    for (const c of crashed) events.emit('MODEL_CRASHED', c.id, c.name, c.reason);
+    for (const p of progress) events.emit('MODEL_TRAINING_PROGRESS', p.id, p.name, p.step, p.loss);
+    for (const e of emerged) events.emit('EMERGENCE_TRIGGERED', e.modelId, e.ruleId, e.description);
+  }
+
+  /** 从已完成科技推断解锁的并行策略 */
+  private getUnlockedStrategies(completedTechs: string[]): ParallelStrategy[] {
+    const strategies: ParallelStrategy[] = ['dp']; // DP 默认解锁
+    if (completedTechs.includes('tensor_parallel_basic')) strategies.push('tp');
+    if (completedTechs.includes('pipeline_parallel')) strategies.push('pp');
+    if (completedTechs.includes('3d_parallel')) {
+      strategies.push('dp_tp', 'dp_pp', 'tp_pp', 'dp_tp_pp');
     }
-    for (const p of progress) {
-      events.emit('MODEL_TRAINING_PROGRESS', p.id, p.name, p.step, p.loss);
-    }
+    return strategies;
   }
 
   /** 从集群中收集所有在线卡的规格 */
