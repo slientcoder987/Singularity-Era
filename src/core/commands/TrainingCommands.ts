@@ -88,6 +88,14 @@ export class StartTrainingCommand implements Command {
     private readonly computeTotal: number,
     /** 每卡最低显存要求 GB（可选，默认从模型参数推算） */
     private readonly minMemoryPerCard?: number,
+    /** 上下文长度（token 数，默认 4096） */
+    private readonly contextLength: number = 4096,
+    /** 训练数据集 id（默认初始数据集） */
+    private readonly datasetId: string = 'dataset-initial',
+    /** 使用的技术 id 列表 */
+    private readonly techIds: string[] = ['pretraining'],
+    /** 是否实验性训练 */
+    private readonly isExperimental: boolean = false,
   ) {}
 
   execute(state: GameState, events: EventBus): void {
@@ -126,6 +134,14 @@ export class StartTrainingCommand implements Command {
       startedAt: today,
       completedAt: null,
       pauseReason: null,
+      lastCheckpointRemaining: this.computeTotal,
+      checkpointInterval: Math.max(this.computeTotal * 0.05, 1),
+      lastCheckpointDay: today,
+      lostFlops: 0,
+      contextLength: this.contextLength,
+      datasetId: this.datasetId,
+      techIds: [...this.techIds],
+      isExperimental: this.isExperimental,
     };
 
     state.update((draft) => {
@@ -182,5 +198,59 @@ export class CancelTrainingCommand implements Command {
     });
 
     events.emit('TRAINING_CANCELLED', this.projectId);
+  }
+}
+
+/* ========================================================================
+ * ResumeTrainingCommand
+ * ====================================================================== */
+export class ResumeTrainingCommand implements Command {
+  constructor(private readonly projectId: string) {}
+
+  execute(state: GameState, events: EventBus): void {
+    const current = state.read();
+    const project = current.trainingProjects.find((p) => p.id === this.projectId);
+
+    if (!project) {
+      events.emit('TRAINING_RESUME_REJECTED', { reason: '项目不存在' });
+      return;
+    }
+
+    if (project.status !== 'paused') {
+      events.emit('TRAINING_RESUME_REJECTED', { reason: '项目未暂停' });
+      return;
+    }
+
+    // 检查是否有可用卡
+    let hasOnlineCard = false;
+    for (const cardUids of Object.values(project.nodeAssignments)) {
+      for (const uid of cardUids) {
+        for (const modelId of Object.keys(current.resourceMeta)) {
+          const pool = current.resourceMeta[modelId] as CardInstance[] | undefined;
+          const card = pool?.find((c) => c.uid === uid);
+          if (card && card.status === 'online') {
+            hasOnlineCard = true;
+            break;
+          }
+        }
+        if (hasOnlineCard) break;
+      }
+      if (hasOnlineCard) break;
+    }
+
+    if (!hasOnlineCard) {
+      events.emit('TRAINING_RESUME_REJECTED', { reason: '无在线计算卡，请先修复故障' });
+      return;
+    }
+
+    state.update((draft) => {
+      const p = draft.trainingProjects.find((x) => x.id === this.projectId);
+      if (p) {
+        p.status = 'training';
+        p.pauseReason = null;
+      }
+    });
+
+    events.emit('TRAINING_RESUMED', this.projectId);
   }
 }

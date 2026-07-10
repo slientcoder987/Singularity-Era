@@ -16,7 +16,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: -Infinity,
     maxValue: Infinity,
     initialValue: 1_000_000,
-    uiConfig: { icon: '💰', color: '#ffd76b', showInTopBar: true, format: 'currency' },
+    uiConfig: { icon: '\u{1F4B0}', color: '#ffd76b', showInTopBar: true, format: 'currency' },
   },
   // ===== 算力 =====
   {
@@ -27,28 +27,78 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: Infinity,
     initialValue: 624, // 初始 1 张 A100 = 624 TFLOPS
-    uiConfig: { icon: '🧠', color: '#a78bfa', showInTopBar: true, format: 'tflops' },
+    uiConfig: { icon: '\u{1F9E0}', color: '#a78bfa', showInTopBar: true, format: 'tflops' },
   },
   // ===== 硬件（不在顶栏显示，详情见资源面板） =====
   {
-    id: 'compute_h100',
-    name: 'H100 计算卡',
+    id: 'compute_l40s',
+    name: 'L40S 计算卡',
     category: 'hardware',
     isContinuous: false,
     minValue: 0,
     maxValue: 10000,
     initialValue: 0,
-    uiConfig: { icon: '🖥️', color: '#56dce6', showInTopBar: false, format: 'number' },
+    uiConfig: { icon: '\u{1F5A5}\uFE0F', color: '#56dce6', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'compute_a100_40g',
+    name: 'A100 40GB',
+    category: 'hardware',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 10000,
+    initialValue: 0,
+    uiConfig: { icon: '\u{1F5A5}\uFE0F', color: '#56dce6', showInTopBar: false, format: 'number' },
   },
   {
     id: 'compute_a100',
-    name: 'A100 计算卡',
+    name: 'A100 80GB',
     category: 'hardware',
     isContinuous: false,
     minValue: 0,
     maxValue: 10000,
     initialValue: 1,
-    uiConfig: { icon: '🖥️', color: '#56dce6', showInTopBar: false, format: 'number' },
+    uiConfig: { icon: '\u{1F5A5}\uFE0F', color: '#56dce6', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'compute_h100',
+    name: 'H100 80GB',
+    category: 'hardware',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 10000,
+    initialValue: 0,
+    uiConfig: { icon: '\u{1F5A5}\uFE0F', color: '#56dce6', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'compute_h200',
+    name: 'H200 141GB',
+    category: 'hardware',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 10000,
+    initialValue: 0,
+    uiConfig: { icon: '\u{1F5A5}\uFE0F', color: '#56dce6', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'compute_b200',
+    name: 'B200 192GB',
+    category: 'hardware',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 10000,
+    initialValue: 0,
+    uiConfig: { icon: '\u{1F5A5}\uFE0F', color: '#56dce6', showInTopBar: false, format: 'number' },
+  },
+  {
+    id: 'compute_gb300',
+    name: 'GB300 288GB',
+    category: 'hardware',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 10000,
+    initialValue: 0,
+    uiConfig: { icon: '\u{1F5A5}\uFE0F', color: '#56dce6', showInTopBar: false, format: 'number' },
   },
   // ===== 电力 =====
   {
@@ -59,7 +109,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: 1_000_000,
     initialValue: 100,
-    uiConfig: { icon: '⚡', color: '#ffb454', showInTopBar: true, format: 'number' },
+    uiConfig: { icon: '\u26A1', color: '#ffb454', showInTopBar: true, format: 'number' },
   },
   // ===== 普通员工（每种角色对应一种资源） =====
   {
@@ -70,7 +120,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: 500,
     initialValue: 0,
-    uiConfig: { icon: '👨‍🔬', color: '#a78bfa', showInTopBar: false, format: 'number' },
+    uiConfig: { icon: '\u{1F468}\u200D\u{1F52C}', color: '#a78bfa', showInTopBar: false, format: 'number' },
   },
   {
     id: 'staff_data_engineer',
@@ -80,7 +130,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: 500,
     initialValue: 0,
-    uiConfig: { icon: '👩‍💻', color: '#a78bfa', showInTopBar: false, format: 'number' },
+    uiConfig: { icon: '\u{1F469}\u200D\u{1F4BB}', color: '#a78bfa', showInTopBar: false, format: 'number' },
   },
   {
     id: 'staff_system_engineer',
@@ -90,7 +140,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: 500,
     initialValue: 0,
-    uiConfig: { icon: '🔧', color: '#a78bfa', showInTopBar: false, format: 'number' },
+    uiConfig: { icon: '\u{1F527}', color: '#a78bfa', showInTopBar: false, format: 'number' },
   },
   {
     id: 'staff_product_manager',
@@ -100,7 +150,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: 500,
     initialValue: 0,
-    uiConfig: { icon: '📋', color: '#a78bfa', showInTopBar: false, format: 'number' },
+    uiConfig: { icon: '\u{1F4CB}', color: '#a78bfa', showInTopBar: false, format: 'number' },
   },
   {
     id: 'staff_legal_pr',
@@ -110,7 +160,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     minValue: 0,
     maxValue: 500,
     initialValue: 0,
-    uiConfig: { icon: '⚖️', color: '#a78bfa', showInTopBar: false, format: 'number' },
+    uiConfig: { icon: '\u2696\uFE0F', color: '#a78bfa', showInTopBar: false, format: 'number' },
   },
 ];
 
@@ -136,12 +186,20 @@ export interface HardwareSpec {
 
 export const HARDWARE_SPECS: HardwareSpec[] = [
   {
-    resourceId: 'compute_h100',
-    powerPerCard: 0.7,
-    tflopsPerCard: 1979,
-    unitCost: 30_000,
-    deliveryDays: 7,
-    wearPerDay: 0.0005,
+    resourceId: 'compute_l40s',
+    powerPerCard: 0.3,
+    tflopsPerCard: 733,
+    unitCost: 8_000,
+    deliveryDays: 3,
+    wearPerDay: 0.0006,
+  },
+  {
+    resourceId: 'compute_a100_40g',
+    powerPerCard: 0.3,
+    tflopsPerCard: 312,
+    unitCost: 6_000,
+    deliveryDays: 2,
+    wearPerDay: 0.001,
   },
   {
     resourceId: 'compute_a100',
@@ -150,6 +208,38 @@ export const HARDWARE_SPECS: HardwareSpec[] = [
     unitCost: 10_000,
     deliveryDays: 3,
     wearPerDay: 0.0008,
+  },
+  {
+    resourceId: 'compute_h100',
+    powerPerCard: 0.7,
+    tflopsPerCard: 1979,
+    unitCost: 30_000,
+    deliveryDays: 7,
+    wearPerDay: 0.0005,
+  },
+  {
+    resourceId: 'compute_h200',
+    powerPerCard: 0.7,
+    tflopsPerCard: 1979,
+    unitCost: 40_000,
+    deliveryDays: 10,
+    wearPerDay: 0.0004,
+  },
+  {
+    resourceId: 'compute_b200',
+    powerPerCard: 1.0,
+    tflopsPerCard: 4500,
+    unitCost: 45_000,
+    deliveryDays: 14,
+    wearPerDay: 0.0003,
+  },
+  {
+    resourceId: 'compute_gb300',
+    powerPerCard: 1.5,
+    tflopsPerCard: 7500,
+    unitCost: 75_000,
+    deliveryDays: 21,
+    wearPerDay: 0.0002,
   },
 ];
 

@@ -1,217 +1,154 @@
 /**
- * 科技树配置
+ * 技术树配置
  *
- * 玩家通过研发投入解锁科技，影响训练效率、稳定性，并解锁隐性维度精确显示。
- * 新增科技只需在此添加条目。
+ * P0 包含基础预训练、SFT、FlashAttention、RoPE、MoE 等核心技术。
+ * 技术效果通过 TechEffect 类型表达。
  */
-
 import type { TechEffect } from '../entities/Infrastructure';
-import type { CapabilityDim } from '../config/capabilityDims';
-import type { TrainingStageId } from '../config/trainingStages';
 
-export type TechCategory =
-  | 'training'
-  | 'parallel'
-  | 'stability'
-  | 'evaluation'
-  | 'architecture'
-  | 'data';
+/** 技术 id */
+export type TechId =
+  | 'pretraining'
+  | 'sft'
+  | 'flash_attention'
+  | 'flash_attention_2'
+  | 'rope'
+  | 'moe'
+  | 'data_cleaning_v1'
+  | 'zero_1'
+  | 'swiglu'
+  | 'rmsnorm'
+  | 'pre_ln';
 
-/** 并行策略类型 */
-export type ParallelStrategy = 'dp' | 'tp' | 'pp' | 'dp_tp' | 'dp_pp' | 'tp_pp' | 'dp_tp_pp';
-
+/** 技术节点 */
 export interface TechNode {
-  id: string;
+  id: TechId;
   name: string;
   description: string;
-  category: TechCategory;
-  /** 前置科技 id */
-  prerequisites: string[];
-  /** 研发成本（科技点） */
-  researchCost: number;
+  /** 前置技术 */
+  prerequisites: TechId[];
   /** 研发所需天数 */
   researchDays: number;
-  /** 解锁效果 */
-  effects: TechEffect[];
-  /** 解锁的隐性维度精确显示（可选） */
-  revealsHiddenDims?: CapabilityDim[];
-  /** 解锁的并行策略（可选） */
-  unlocksParallelStrategy?: ParallelStrategy;
-  /** 解锁的训练阶段（可选） */
-  unlocksStage?: TrainingStageId;
-  /** 解锁的架构（可选） */
-  unlocksArchitecture?: string;
+  /** 研发所需资金 */
+  researchCost: number;
+  /** 效果 */
+  effect: TechEffect;
+  /** 是否架构类（影响架构-能力映射） */
+  isArchitecture: boolean;
 }
 
 export const TECH_TREE: TechNode[] = [
-  // ===== 训练效率 =====
   {
-    id: 'efficient_optimizer',
-    name: '高效优化器',
-    description: 'AdamW 改进，提升训练利用率 5%',
-    category: 'training',
+    id: 'pretraining',
+    name: '预训练',
+    description: '基础语言模型预训练',
     prerequisites: [],
-    researchCost: 100,
-    researchDays: 30,
-    effects: [{ type: 'improve_utilization', value: 0.05 }],
+    researchDays: 0,
+    researchCost: 0,
+    effect: { type: 'modify_base_score_E', value: 0 },
+    isArchitecture: false,
+  },
+  {
+    id: 'sft',
+    name: '监督微调(SFT)',
+    description: '指令微调提升对话能力',
+    prerequisites: ['pretraining'],
+    researchDays: 15,
+    researchCost: 50_000,
+    effect: { type: 'capability_bonus', capability: 'dialogue_fluency', bonus: 0.15 },
+    isArchitecture: false,
   },
   {
     id: 'flash_attention',
-    name: 'Flash Attention',
-    description: '注意力计算优化，利用率 +8%',
-    category: 'training',
-    prerequisites: ['efficient_optimizer'],
-    researchCost: 200,
-    researchDays: 45,
-    effects: [{ type: 'improve_utilization', value: 0.08 }],
-  },
-  {
-    id: 'curriculum_learning',
-    name: '课程学习',
-    description: '按难度排序训练数据，数据质量 +15%',
-    category: 'training',
-    prerequisites: ['efficient_optimizer'],
-    researchCost: 150,
-    researchDays: 40,
-    effects: [{ type: 'improve_data_quality', value: 0.15 }],
-  },
-  // ===== 并行策略 =====
-  {
-    id: 'tensor_parallel_basic',
-    name: '张量并行基础',
-    description: '解锁 TP，减少大模型显存压力',
-    category: 'parallel',
-    prerequisites: [],
-    researchCost: 150,
-    researchDays: 35,
-    effects: [{ type: 'improve_parallel_efficiency', value: 0.02 }],
-    unlocksParallelStrategy: 'tp',
-  },
-  {
-    id: 'pipeline_parallel',
-    name: '流水线并行',
-    description: '解锁 PP，支持超大模型训练',
-    category: 'parallel',
-    prerequisites: ['tensor_parallel_basic'],
-    researchCost: 300,
-    researchDays: 60,
-    effects: [{ type: 'improve_parallel_efficiency', value: 0.03 }],
-    unlocksParallelStrategy: 'pp',
-  },
-  {
-    id: '3d_parallel',
-    name: '3D 并行',
-    description: 'DP+TP+PP 联合，极致扩展性',
-    category: 'parallel',
-    prerequisites: ['pipeline_parallel'],
-    researchCost: 500,
-    researchDays: 90,
-    effects: [{ type: 'improve_parallel_efficiency', value: 0.05 }],
-    unlocksParallelStrategy: 'dp_tp_pp',
-  },
-  // ===== 稳定性 =====
-  {
-    id: 'gradient_clipping',
-    name: '梯度裁剪',
-    description: '训练崩溃概率 -30%',
-    category: 'stability',
-    prerequisites: [],
-    researchCost: 80,
+    name: 'FlashAttention',
+    description: 'IO 感知注意力，降低显存占用 20%',
+    prerequisites: ['pretraining'],
     researchDays: 20,
-    effects: [{ type: 'reduce_crash_probability', value: 0.3 }],
+    researchCost: 80_000,
+    effect: { type: 'reduce_memory', value: 0.2 },
+    isArchitecture: false,
   },
   {
-    id: 'numerical_stability',
-    name: '数值稳定性',
-    description: 'BF16 训练稳定性提升',
-    category: 'stability',
-    prerequisites: ['gradient_clipping'],
-    researchCost: 200,
-    researchDays: 50,
-    effects: [{ type: 'reduce_crash_probability', value: 0.2 }],
-  },
-  // ===== 评测 =====
-  {
-    id: 'eval_precision_math',
-    name: '数学评测精化',
-    description: '解锁 math_reasoning 精确数值',
-    category: 'evaluation',
-    prerequisites: [],
-    researchCost: 100,
-    researchDays: 25,
-    effects: [],
-    revealsHiddenDims: ['math_reasoning'],
-  },
-  {
-    id: 'eval_precision_safety',
-    name: '安全评测精化',
-    description: '解锁 safety_alignment 精确数值',
-    category: 'evaluation',
-    prerequisites: ['eval_precision_math'],
-    researchCost: 150,
-    researchDays: 30,
-    effects: [],
-    revealsHiddenDims: ['sycophancy', 'deception'],
-  },
-  // ===== 架构 =====
-  {
-    id: 'moe_arch',
-    name: 'MoE 架构',
-    description: '解锁 MoE 架构，支持更大模型',
-    category: 'architecture',
-    prerequisites: ['tensor_parallel_basic'],
-    researchCost: 400,
-    researchDays: 80,
-    effects: [],
-    unlocksArchitecture: 'moe',
-  },
-  {
-    id: 'long_context',
-    name: '长上下文',
-    description: '解锁长上下文架构',
-    category: 'architecture',
+    id: 'flash_attention_2',
+    name: 'FlashAttention v2',
+    description: '进一步提升效率，训练算力 -10%',
     prerequisites: ['flash_attention'],
-    researchCost: 300,
-    researchDays: 60,
-    effects: [],
-    unlocksArchitecture: 'long_context',
-  },
-  // ===== 数据 =====
-  {
-    id: 'data_dedup',
-    name: '数据去重',
-    description: '数据质量 +10',
-    category: 'data',
-    prerequisites: [],
-    researchCost: 80,
-    researchDays: 20,
-    effects: [{ type: 'improve_data_quality', value: 0.1 }],
+    researchDays: 25,
+    researchCost: 120_000,
+    effect: { type: 'reduce_compute_cost', value: 0.1 },
+    isArchitecture: false,
   },
   {
-    id: 'data_filtering',
-    name: '数据过滤',
-    description: '数据质量 +15',
-    category: 'data',
-    prerequisites: ['data_dedup'],
-    researchCost: 150,
-    researchDays: 35,
-    effects: [{ type: 'improve_data_quality', value: 0.15 }],
+    id: 'rope',
+    name: '旋转位置编码(RoPE)',
+    description: '优异的长度外推性，上下文 ×4',
+    prerequisites: ['pretraining'],
+    researchDays: 18,
+    researchCost: 60_000,
+    effect: { type: 'extend_context', multiplier: 4 },
+    isArchitecture: true,
+  },
+  {
+    id: 'moe',
+    name: '混合专家(MoE)',
+    description: '稀疏激活扩大参数规模，A +150',
+    prerequisites: ['pretraining'],
+    researchDays: 40,
+    researchCost: 300_000,
+    effect: { type: 'modify_base_score_A', value: 150 },
+    isArchitecture: true,
+  },
+  {
+    id: 'data_cleaning_v1',
+    name: '数据清洗v1',
+    description: '提升数据质量，B +100',
+    prerequisites: ['pretraining'],
+    researchDays: 12,
+    researchCost: 40_000,
+    effect: { type: 'modify_base_score_B', value: 100 },
+    isArchitecture: false,
+  },
+  {
+    id: 'zero_1',
+    name: 'ZeRO-1',
+    description: '优化器状态分片，显存 -15%',
+    prerequisites: ['pretraining'],
+    researchDays: 15,
+    researchCost: 50_000,
+    effect: { type: 'reduce_memory', value: 0.15 },
+    isArchitecture: false,
+  },
+  {
+    id: 'swiglu',
+    name: 'SwiGLU',
+    description: '门控激活函数提升质量，A +50',
+    prerequisites: ['pretraining'],
+    researchDays: 15,
+    researchCost: 60_000,
+    effect: { type: 'modify_base_score_A', value: 50 },
+    isArchitecture: true,
+  },
+  {
+    id: 'rmsnorm',
+    name: 'RMSNorm',
+    description: '高效归一化，训练算力 -5%',
+    prerequisites: ['pretraining'],
+    researchDays: 10,
+    researchCost: 30_000,
+    effect: { type: 'reduce_compute_cost', value: 0.05 },
+    isArchitecture: false,
+  },
+  {
+    id: 'pre_ln',
+    name: 'Pre-LN',
+    description: '前置归一化提升训练稳定性，E +0.2',
+    prerequisites: ['pretraining'],
+    researchDays: 12,
+    researchCost: 40_000,
+    effect: { type: 'modify_base_score_E', value: 0.2 },
+    isArchitecture: false,
   },
 ];
 
-const TECH_MAP = new Map(TECH_TREE.map((t) => [t.id, t]));
-
-export function getTechNode(id: string): TechNode | undefined {
-  return TECH_MAP.get(id);
-}
-
-/** 获取某科技是否可研究（前置已满足且未完成） */
-export function canResearch(
-  techId: string,
-  completedTechs: string[],
-): boolean {
-  if (completedTechs.includes(techId)) return false;
-  const node = getTechNode(techId);
-  if (!node) return false;
-  return node.prerequisites.every((p) => completedTechs.includes(p));
-}
+export const TECH_MAP: Record<TechId, TechNode> =
+  Object.fromEntries(TECH_TREE.map((t) => [t.id, t])) as Record<TechId, TechNode>;

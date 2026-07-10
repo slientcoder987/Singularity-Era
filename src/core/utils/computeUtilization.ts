@@ -1,5 +1,4 @@
-import type { ComputeCardSpec, ComputePrecision } from '../entities/ComputeCard';
-import { getCardTflops } from '../entities/ComputeCard';
+import type { ComputeCardSpec } from '../entities/ComputeCard';
 import type { Cluster, DataCenter, TechEffect } from '../entities/Infrastructure';
 import { getCoolingType } from '../config/infrastructure';
 import { clamp } from '../utils';
@@ -20,6 +19,18 @@ export interface UtilizationResult {
   requiresParallel: boolean;
   /** 模型并行使用的卡数（1 表示单卡） */
   parallelSize: number;
+  /** 互联带宽惩罚 0~1 */
+  interconnectPenalty: number;
+  /** 跨节点通信惩罚 0~1 */
+  crossNodePenalty: number;
+  /** 规模惩罚 0~1 */
+  scalePenalty: number;
+  /** 同构性因子 0~1 */
+  homogeneityFactor: number;
+  /** 实际功耗 kW（训练负载） */
+  actualPowerKW: number;
+  /** 电力利用率 0~1（实际/容量） */
+  powerUtilization: number;
 }
 
 /** 模型参数信息 */
@@ -28,8 +39,24 @@ export interface ModelParams {
   paramCount: number;
   /** 架构类型 */
   architecture: string;
-  /** 训练精度（不同精度下卡的理论算力不同），缺省为 bf16 */
-  precision?: ComputePrecision;
+}
+
+/** 工作负载类型 */
+export type WorkloadType = 'idle' | 'inference' | 'training';
+
+/**
+ * 计算 GPU 实际功耗 kW
+ *
+ * idle:      maxPowerDrawKW × 0.10
+ * inference: maxPowerDrawKW × 0.65
+ * training:  maxPowerDrawKW × 0.95
+ */
+export function calcActualPowerDraw(
+  cardSpecs: ComputeCardSpec[],
+  workload: WorkloadType,
+): number {
+  const factor = workload === 'idle' ? 0.10 : workload === 'inference' ? 0.65 : 0.95;
+  return cardSpecs.reduce((sum, s) => sum + s.maxPowerDrawKW * factor, 0);
 }
 
 /**
@@ -40,30 +67,124 @@ export interface ModelParams {
  */
 export function estimateRequiredMemory(model: ModelParams): number {
   const paramsInBillions = model.paramCount;
-  // 权重 fp16: 2 GB / B
   const weightMemory = paramsInBillions * 2;
-  // 激活 + 优化器状态: 约 2.2x 权重
   const activationMemory = weightMemory * 2.2;
   return weightMemory + activationMemory;
 }
 
 /**
+ * 计算互联带宽惩罚（节点内 TP）
+ *
+ * 所需互联带宽 / 实际互联带宽 < 1: 无惩罚
+ * 0.5 ≤ ratio < 1: penalty = (1 - ratio) * 0.15
+ * ratio < 0.5: penalty = 0.30
+ */
+function calcInterconnectPenalty(
+  requiresParallel: boolean,
+  parallelSize: number,
+  cardSpecs: ComputeCardSpec[],
+): number {
+  if (!requiresParallel || cardSpecs.length === 0) return 0;
+
+  const requiredBW = parallelSize * 50;
+  const actualBW = Math.min(
+    ...cardSpecs.map((s) => (s.nvlinkBandwidth > 0 ? s.nvlinkBandwidth : s.memoryBandwidth / 4)),
+  );
+
+  if (actualBW <= 0) return 0.30;
+
+  const ratio = requiredBW / actualBW;
+  if (ratio < 1) return 0;
+  if (ratio < 2) return (1 - 1 / ratio) * 0.15;
+  return 0.30;
+}
+
+/**
+ * 计算跨节点通信惩罚
+ *
+ * topologyFactor:
+ *   simple:          1.50
+ *   fat_tree:        1.15
+ *   dragonfly:       1.05
+ *   rail_optimized:  1.00
+ *
+ * 所需带宽 = parallelSize * 20 GB/s
+ * 实际带宽 = cluster.allReduceBandwidth / topologyFactor
+ *
+ * ratio < 1:   无惩罚
+ * 1 ≤ ratio < 2: penalty = (1 - 1/ratio) * 0.20
+ * ratio ≥ 2:   penalty = 0.40
+ */
+function calcCrossNodePenalty(
+  requiresParallel: boolean,
+  parallelSize: number,
+  crossNode: boolean,
+  cluster?: Cluster,
+): number {
+  if (!requiresParallel || !crossNode || !cluster) return 0;
+
+  const topologyFactor =
+    cluster.networkTopology === 'simple' ? 1.50 :
+    cluster.networkTopology === 'fat_tree' ? 1.15 :
+    cluster.networkTopology === 'dragonfly' ? 1.05 :
+    1.00; // rail_optimized
+
+  const requiredBW = parallelSize * 20;
+  const actualBW = cluster.allReduceBandwidth / topologyFactor;
+
+  if (actualBW <= 0) return 0.40;
+
+  const ratio = requiredBW / actualBW;
+  if (ratio < 1) return 0;
+  if (ratio < 2) return (1 - 1 / ratio) * 0.20;
+  return 0.40;
+}
+
+/**
+ * 计算规模惩罚（阿姆达尔定律在分布式训练中的应用）
+ */
+function calcScalePenalty(totalGpus: number): number {
+  if (totalGpus <= 8) return 1.0;
+  if (totalGpus <= 64) return Math.max(1 - Math.log(totalGpus / 8) * 0.02, 0.70);
+  if (totalGpus <= 512) return Math.max(1 - Math.log(totalGpus / 64) * 0.04, 0.70);
+  return Math.max(1 - Math.log(totalGpus / 512) * 0.06, 0.70);
+}
+
+/**
+ * 计算同构性因子
+ */
+function calcHomogeneityFactor(cardSpecs: ComputeCardSpec[]): number {
+  if (cardSpecs.length <= 1) return 1.0;
+
+  const resourceIds = new Set(cardSpecs.map((s) => s.resourceId));
+  if (resourceIds.size === 1) return 1.0;
+
+  const powers = cardSpecs.map((s) => s.maxPowerDrawKW);
+  const minPower = Math.min(...powers);
+  const maxPower = Math.max(...powers);
+  const ratio = minPower / maxPower;
+
+  if (ratio >= 0.8) return 0.98;
+  if (ratio >= 0.5) return 0.93;
+  return 0.85;
+}
+
+/**
+ * 计算电力因子（分档公式）
+ */
+function calcPowerFactor(totalPowerMW: number, maxPowerMW: number): number {
+  if (totalPowerMW > maxPowerMW) return 0.50;
+  if (totalPowerMW > 0.95 * maxPowerMW) return 1 - (totalPowerMW / maxPowerMW - 0.95) * 8;
+  if (totalPowerMW > 0.85 * maxPowerMW) return 1 - (totalPowerMW / maxPowerMW - 0.85) * 2;
+  return 1.0;
+}
+
+/**
  * 计算有效算力
  *
- * 有效算力 = 理论总算力 × 软件利用率 × 集群利用率 × 冷却加成 × 模型效率因子
- *
- * 各因子：
- * 1. 软件利用率：基础 0.4 + 科技改进 + （未来）员工技能
- * 2. 集群利用率：有集群取 cluster.utilizationBonus + 0.9 基数；无集群 0.9
- * 3. 冷却加成：air 0, liquid +0.05, immersion +0.1
- * 4. 电力限制：若数据中心功耗接近上限，利用率衰减
- * 5. 模型效率：显存不足需模型并行，每多一张卡效率损失
- *
- * @param cardSpecs 参与计算的卡规格列表（每张卡一个元素）
- * @param cluster 所属集群（可选）
- * @param dc 所属数据中心（可选）
- * @param techEffects 激活的科技效果
- * @param modelParams 模型参数（可选，用于判断显存和并行）
+ * utilization = softwareUtil × clusterUtil × (1 + coolingBonus) × powerFactor
+ *               × parallelEfficiency × (1 - interconnectPenalty)
+ *               × (1 - crossNodePenalty) × scalePenalty × homogeneityFactor
  */
 export function calculateEffectiveCompute(
   cardSpecs: ComputeCardSpec[],
@@ -72,9 +193,7 @@ export function calculateEffectiveCompute(
   techEffects: TechEffect[] = [],
   modelParams?: ModelParams,
 ): UtilizationResult {
-  // 理论总算力（按模型训练精度取每卡算力；无模型时按 bf16 基准）
-  const precision: ComputePrecision = modelParams?.precision ?? 'bf16';
-  const totalTflops = cardSpecs.reduce((sum, s) => sum + getCardTflops(s, precision), 0);
+  const totalTflops = cardSpecs.reduce((sum, s) => sum + s.tflopsPerCard, 0);
 
   if (cardSpecs.length === 0 || totalTflops === 0) {
     return {
@@ -83,6 +202,12 @@ export function calculateEffectiveCompute(
       utilization: 0,
       requiresParallel: false,
       parallelSize: 0,
+      interconnectPenalty: 0,
+      crossNodePenalty: 0,
+      scalePenalty: 1.0,
+      homogeneityFactor: 1.0,
+      actualPowerKW: 0,
+      powerUtilization: 0,
     };
   }
 
@@ -98,37 +223,41 @@ export function calculateEffectiveCompute(
   softwareUtil = clamp(softwareUtil, 0, 0.95);
 
   // ===== 2. 集群利用率 =====
-  let clusterUtil = 0.9; // 单机默认较高
+  let clusterUtil = 0.9;
   if (cluster) {
     clusterUtil = 0.9 + cluster.utilizationBonus;
   }
   clusterUtil = clamp(clusterUtil, 0, 1);
 
-  // ===== 3. 冷却加成 =====
+  // ===== 3. 冷却加成（含 PUE 衰减惩罚） =====
   let coolingBonus = 0;
   if (dc) {
     const cooling = getCoolingType(dc.coolingType);
     if (cooling) {
       coolingBonus = cooling.utilizationBonus;
     }
+    // PUE 衰减惩罚：currentPue 每超出 basePue 0.01，利用率降 0.5%
+    const pueDegradation = dc.currentPue - dc.basePue;
+    if (pueDegradation > 0) {
+      coolingBonus -= pueDegradation * 0.5;
+    }
   }
 
-  // ===== 4. 电力限制 =====
-  let powerPenalty = 0;
+  // ===== 4. 电力因子（基于训练负载功耗） =====
+  let powerFactor = 1.0;
+  let actualPowerKW = 0;
+  let powerUtilization = 0;
   if (dc) {
-    const totalPowerKW = cardSpecs.reduce((sum, s) => sum + s.maxPowerDrawKW, 0);
-    const totalPowerMW = totalPowerKW / 1000;
-    // 若接近 maxPowerMW 的 90%，开始衰减
-    const threshold = dc.maxPowerMW * 0.9;
-    if (totalPowerMW > dc.maxPowerMW) {
-      // 超过上限，严重衰减
-      powerPenalty = 0.5;
-      bottlenecks.push('电力过载');
-    } else if (totalPowerMW > threshold) {
-      // 接近上限，轻微衰减
-      const overRatio = (totalPowerMW - threshold) / (dc.maxPowerMW - threshold);
-      powerPenalty = overRatio * 0.2;
-      bottlenecks.push('电力接近上限');
+    actualPowerKW = calcActualPowerDraw(cardSpecs, 'training');
+    const actualPowerMW = actualPowerKW / 1000;
+    powerUtilization = dc.maxPowerMW > 0 ? actualPowerMW / dc.maxPowerMW : 0;
+    powerFactor = calcPowerFactor(actualPowerMW, dc.maxPowerMW);
+    if (powerFactor < 1.0) {
+      if (powerFactor <= 0.5) {
+        bottlenecks.push('电力过载');
+      } else {
+        bottlenecks.push('电力接近上限');
+      }
     }
   }
 
@@ -139,17 +268,13 @@ export function calculateEffectiveCompute(
 
   if (modelParams) {
     const requiredMem = estimateRequiredMemory(modelParams);
-    // 取所有卡中最小显存作为判断基准
     const minCardMem = Math.min(...cardSpecs.map((s) => s.memoryGB));
 
     if (requiredMem > minCardMem) {
-      // 需要模型并行
       requiresParallel = true;
-      // 估算需要多少张卡
       parallelSize = Math.ceil(requiredMem / minCardMem);
       parallelSize = Math.min(parallelSize, cardSpecs.length);
 
-      // 并行效率损失：每多一张卡，效率降低 3%（可被科技缓解）
       let perCardLoss = 0.03;
       for (const eff of techEffects) {
         if (eff.type === 'improve_parallel_efficiency') {
@@ -162,19 +287,49 @@ export function calculateEffectiveCompute(
     }
   }
 
-  // ===== 6. 互联带宽检查（简化） =====
+  // ===== 5b. 并行效率乘以集群并行效率基础值 =====
+  if (cluster) {
+    parallelEfficiency *= cluster.parallelEfficiencyBase;
+  }
+
+  // ===== 6. 互联带宽检查 =====
   if (requiresParallel && cardSpecs.length > 1) {
     const minBandwidth = Math.min(...cardSpecs.map((s) => s.memoryBandwidth));
     if (minBandwidth < 1000) {
-      // 低带宽卡并行效率更差
       parallelEfficiency *= 0.9;
       bottlenecks.push('互联带宽不足');
     }
   }
 
+  // ===== 7. 互联带宽惩罚（节点内） =====
+  const interconnectPenalty = calcInterconnectPenalty(requiresParallel, parallelSize, cardSpecs);
+  if (interconnectPenalty > 0) {
+    bottlenecks.push('互联带宽瓶颈');
+  }
+
+  // ===== 7b. 跨节点通信惩罚 =====
+  const crossNode = requiresParallel && parallelSize > 8;
+  const crossNodePenalty = calcCrossNodePenalty(requiresParallel, parallelSize, crossNode, cluster);
+  if (crossNodePenalty > 0) {
+    bottlenecks.push('跨节点通信瓶颈');
+  }
+
+  // ===== 8. 规模惩罚 =====
+  const scalePenalty = calcScalePenalty(cardSpecs.length);
+  if (scalePenalty < 1.0) {
+    bottlenecks.push(`规模惩罚 (${(scalePenalty * 100).toFixed(1)}%)`);
+  }
+
+  // ===== 9. 同构性因子 =====
+  const homogeneityFactor = calcHomogeneityFactor(cardSpecs);
+  if (homogeneityFactor < 1.0) {
+    bottlenecks.push('异构集群');
+  }
+
   // ===== 综合利用率 =====
   const utilization = clamp(
-    softwareUtil * clusterUtil * (1 + coolingBonus) * (1 - powerPenalty) * parallelEfficiency,
+    softwareUtil * clusterUtil * (1 + coolingBonus) * powerFactor * parallelEfficiency
+      * (1 - interconnectPenalty) * (1 - crossNodePenalty) * scalePenalty * homogeneityFactor,
     0,
     0.98,
   );
@@ -188,5 +343,11 @@ export function calculateEffectiveCompute(
     bottleneck: bottlenecks.length > 0 ? bottlenecks.join('; ') : undefined,
     requiresParallel,
     parallelSize,
+    interconnectPenalty,
+    crossNodePenalty,
+    scalePenalty,
+    homogeneityFactor,
+    actualPowerKW,
+    powerUtilization,
   };
 }

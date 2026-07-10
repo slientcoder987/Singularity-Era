@@ -4,7 +4,6 @@ import type { System } from '../interfaces/System';
 import type { ResourceRegistry } from '../resources/ResourceRegistry';
 import { COMPUTE_CARD_SPECS } from '../config/computeCards';
 import type { ComputeCardSpec } from '../entities/ComputeCard';
-import { getCardTflops } from '../entities/ComputeCard';
 
 /**
  * ComputeHardwareSystem
@@ -64,9 +63,9 @@ export class ComputeHardwareSystem implements System {
           draft.resourceMeta[order.modelId] = pool;
           // 同步硬件资源数值
           draft.resources[order.modelId] = (draft.resources[order.modelId] ?? 0) + order.quantity;
-          // 同步算力（compute_power 以 BF16 为基准统计，供资源面板参考）
+          // 同步算力
           if (spec) {
-            const addedTFlops = order.quantity * getCardTflops(spec, 'bf16');
+            const addedTFlops = order.quantity * spec.tflopsPerCard;
             draft.resources['compute_power'] = (draft.resources['compute_power'] ?? 0) + addedTFlops;
             tflopsGained += addedTFlops;
           }
@@ -110,8 +109,8 @@ export class ComputeHardwareSystem implements System {
           // 同步资源数值：在线数量 = 总数 - broken
           const online = pool.filter((c) => c.status !== 'broken').length;
           draft.resources[def.id] = online;
-          // 同步算力（BF16 基准）
-          const lostTFlops = brokenCount * getCardTflops(spec, 'bf16');
+          // 同步算力
+          const lostTFlops = brokenCount * spec.tflopsPerCard;
           draft.resources['compute_power'] = (draft.resources['compute_power'] ?? 0) - lostTFlops;
           totalBroken += brokenCount;
           tflopsLost += lostTFlops;

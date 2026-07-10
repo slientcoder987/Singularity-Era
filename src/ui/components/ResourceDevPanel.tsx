@@ -8,7 +8,6 @@ import {
   COMPUTE_CARD_SPECS,
   getCardSpec,
 } from '../../core/config/computeCards';
-import { getCardTflops, type ComputePrecision } from '../../core/entities/ComputeCard';
 import {
   POWER_CONFIG,
 } from '../../core/config/resources';
@@ -90,6 +89,7 @@ function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
   const employees = useGameState((s) => s.employees);
   const resourceMeta = useGameState((s) => s.resourceMeta);
   const resources = useGameState((s) => s.resources);
+  const [fundAmount, setFundAmount] = useState(100_000);
 
   // ===== 每日支出 =====
   // 1. 核心员工日薪
@@ -169,12 +169,27 @@ function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
       </div>
 
       <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>操作</span>
-        <button className={styles.btn} onClick={() => game.executeCommand(new AddResourceCommand('funds', 100_000, 'dev: 注入资金'))}>
-          +$100,000
+        <span className={styles.devRowLabel}>资金调整</span>
+        <input
+          className={styles.input}
+          type="number"
+          value={fundAmount}
+          onChange={(e) => setFundAmount(Number(e.target.value) || 0)}
+          style={{ width: '100px' }}
+        />
+        <button
+          className={styles.btn}
+          disabled={fundAmount <= 0}
+          onClick={() => game.executeCommand(new AddResourceCommand('funds', fundAmount, 'dev: 注入资金'))}
+        >
+          + 增加
         </button>
-        <button className={styles.btn} onClick={() => game.executeCommand(new AddResourceCommand('funds', -50_000, 'dev: 扣除资金'))}>
-          -$50,000
+        <button
+          className={styles.btn}
+          disabled={fundAmount <= 0 || funds < fundAmount}
+          onClick={() => game.executeCommand(new AddResourceCommand('funds', -fundAmount, 'dev: 扣除资金'))}
+        >
+          - 减少
         </button>
       </div>
     </div>
@@ -183,32 +198,18 @@ function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
 
 /* ============== 算力 ============== */
 
-const PRECISION_OPTIONS: { key: ComputePrecision; label: string }[] = [
-  { key: 'fp32', label: 'FP32' },
-  { key: 'bf16', label: 'BF16' },
-  { key: 'fp8', label: 'FP8' },
-  { key: 'int4', label: 'INT4' },
-];
-
 function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
   const resources = useGameState((s) => s.resources);
+  const funds = resources['funds'] ?? 0;
+  const computePower = resources['compute_power'] ?? 0;
   const hardwareDefs = game.registry.getByCategory('hardware');
-  // 算力显示精度（可切换）。compute_power 资源以 BF16 基准统计，
-  // 切换精度后按卡数 × 该精度单卡算力重新汇总展示。
-  const [displayPrecision, setDisplayPrecision] = useState<ComputePrecision>('bf16');
-  // 批量购买数量（按硬件型号 id 记录）
-  const [buyQuantities, setBuyQuantities] = useState<Record<string, number>>(() => {
-    const init: Record<string, number> = {};
-    for (const def of hardwareDefs) init[def.id] = 1;
-    return init;
-  });
+  const [buyQty, setBuyQty] = useState<Record<string, number>>({});
 
   // 总在线卡数 / 显存 / 带宽
   let totalCards = 0;
   let totalOnlineCards = 0;
   let totalMemoryGB = 0;
   let totalBandwidthGBs = 0;
-  let totalTflopsAtPrecision = 0;
   for (const def of hardwareDefs) {
     const count = resources[def.id] ?? 0;
     totalCards += count;
@@ -217,29 +218,15 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
     if (spec) {
       totalMemoryGB += count * spec.memoryGB;
       totalBandwidthGBs += count * spec.memoryBandwidth;
-      totalTflopsAtPrecision += count * getCardTflops(spec, displayPrecision);
     }
   }
 
   return (
     <div className={styles.tabBody}>
       <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>显示精度</span>
-        {PRECISION_OPTIONS.map((p) => (
-          <button
-            key={p.key}
-            className={`${styles.empFilterBtn} ${displayPrecision === p.key ? styles.empFilterBtnActive : ''}`}
-            onClick={() => setDisplayPrecision(p.key)}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>总算力（{displayPrecision.toUpperCase()}）</span>
+        <span className={styles.devRowLabel}>总算力</span>
         <span className={styles.statValue} style={{ color: '#a78bfa', fontSize: '18px' }}>
-          {formatResourceValue(totalTflopsAtPrecision, 'tflops')}
+          {formatResourceValue(computePower, 'tflops')}
         </span>
       </div>
 
@@ -268,48 +255,34 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
         hardwareDefs.map((def) => {
           const spec = getCardSpec(def.id);
           const cardCount = resources[def.id] ?? 0;
-          const tflopsContribution = spec ? cardCount * getCardTflops(spec, displayPrecision) : 0;
-          const perCard = spec ? getCardTflops(spec, displayPrecision) : 0;
-          const buyQty = buyQuantities[def.id] ?? 1;
-          const unitCost = spec?.unitCost ?? 0;
-          const totalCost = unitCost * buyQty;
-          const canAfford = (resources['funds'] ?? 0) >= totalCost;
+          const tflopsContribution = spec ? cardCount * spec.tflopsPerCard : 0;
           return (
-            <div key={def.id} className={styles.devRow} style={{ flexWrap: 'wrap', gap: '8px' }}>
+            <div key={def.id} className={styles.devRow}>
               <span className={styles.devRowLabel}>{def.uiConfig?.icon} {def.name}</span>
               <span className={styles.devHint}>
                 {cardCount} 张 · {formatResourceValue(tflopsContribution, 'tflops')}
                 {spec &&
-                  ` · 单卡 ${perCard.toLocaleString()} TFLOPS · ${spec.memoryGB}GB · ${spec.memoryBandwidth}GB/s · ${spec.powerPerCard}kW`}
+                  ` · 单卡 ${spec.tflopsPerCard.toLocaleString()} TFLOPS · ${spec.memoryGB}GB · ${spec.memoryBandwidth}GB/s · NVLink ${spec.nvlinkBandwidth}GB/s · ${spec.powerPerCard}kW · ${spec.recommendedRole}`}
               </span>
-              <div className={styles.devRow} style={{ marginLeft: 'auto', gap: '4px' }}>
-                <input
-                  className={styles.input}
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={buyQty}
-                  onChange={(e) =>
-                    setBuyQuantities((prev) => ({
-                      ...prev,
-                      [def.id]: Math.max(1, Number(e.target.value)),
-                    }))
-                  }
-                  style={{ width: '50px' }}
-                />
-                <button
-                  className={styles.btn}
-                  disabled={!canAfford}
-                  onClick={() => {
-                    game.executeCommand(new PurchaseHardwareCommand(def.id, buyQty));
-                  }}
-                >
-                  购买
-                  <span className={styles.devHint}>
-                    （${totalCost.toLocaleString()} · {spec?.deliveryDays}天）
-                  </span>
-                </button>
-              </div>
+              <input
+                className={styles.input}
+                type="number"
+                min={1}
+                step={1}
+                value={buyQty[def.id] ?? 1}
+                onChange={(e) => setBuyQty((prev) => ({ ...prev, [def.id]: Math.max(1, Number(e.target.value) || 1) }))}
+                style={{ width: '50px' }}
+              />
+              <button
+                className={styles.btn}
+                disabled={spec ? funds < spec.unitCost * (buyQty[def.id] ?? 1) : true}
+                onClick={() => game.executeCommand(new PurchaseHardwareCommand(def.id, buyQty[def.id] ?? 1))}
+              >
+                买 {buyQty[def.id] ?? 1} 张
+                <span className={styles.devHint}>
+                  （${(spec?.unitCost ?? 0).toLocaleString()}/张 · {spec?.deliveryDays}天 · 合计 ${((spec?.unitCost ?? 0) * (buyQty[def.id] ?? 1)).toLocaleString()}）
+                </span>
+              </button>
             </div>
           );
         })

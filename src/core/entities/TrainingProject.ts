@@ -27,4 +27,22 @@ export interface TrainingProject {
   completedAt: number | null;
   /** 训练中断原因（如电力过载） */
   pauseReason: string | null;
+  /** 上次 checkpoint 时的 computeRemaining（回退点） */
+  lastCheckpointRemaining: number;
+  /** Checkpoint 间隔（TFLOPS·天） */
+  checkpointInterval: number;
+  /** 上次 checkpoint 的日期 */
+  lastCheckpointDay: number;
+  /** 训练已投入但因中断损失的 FLOPs 总量 */
+  lostFlops: number;
+
+  // ===== P0 训练机制扩展 =====
+  /** 训练上下文长度（token 数） */
+  contextLength: number;
+  /** 训练数据集 id */
+  datasetId: string;
+  /** 使用的技术 id 列表（影响能力计算） */
+  techIds: string[];
+  /** 是否为实验性训练（小模型验证架构映射） */
+  isExperimental: boolean;
 }

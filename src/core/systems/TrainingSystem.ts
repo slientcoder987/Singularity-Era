@@ -3,11 +3,19 @@ import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { TrainingProject } from '../entities/TrainingProject';
 import type { ComputeCardSpec } from '../entities/ComputeCard';
+import type { Model } from '../entities/Model';
 import { getCardSpec } from '../config/computeCards';
+import { TECH_MAP } from '../config/techTree';
+import { generateArchMatrix } from '../config/archEffects';
 import {
   calculateEffectiveCompute,
   type ModelParams,
 } from '../utils/computeUtilization';
+import {
+  calcBaseScore,
+  deriveBaseScoreParams,
+  calculateCapabilities,
+} from '../utils/capabilityCalc';
 
 /**
  * TrainingSystem
@@ -70,6 +78,13 @@ export class TrainingSystem implements System {
         const dailyProgress = result.effectiveTflops * deltaDays;
         project.computeRemaining = Math.max(0, project.computeRemaining - dailyProgress);
 
+        // Checkpoint 保存
+        const progressSinceCheckpoint = project.lastCheckpointRemaining - project.computeRemaining;
+        if (progressSinceCheckpoint >= project.checkpointInterval) {
+          project.lastCheckpointRemaining = project.computeRemaining;
+          project.lastCheckpointDay = draft.date;
+        }
+
         if (project.computeRemaining <= 0) {
           project.status = 'completed';
           project.completedAt = draft.date;
@@ -87,6 +102,55 @@ export class TrainingSystem implements System {
                 }
               }
             }
+          }
+
+          // 生成模型实体（训练完成 → 计算能力向量）
+          const dataset = draft.datasets.find((d) => d.id === project.datasetId);
+          if (dataset) {
+            // 收集已解锁技术的效果
+            const techEffects = project.techIds
+              .map((tid) => TECH_MAP[tid as keyof typeof TECH_MAP])
+              .filter(Boolean)
+              .map((t) => t.effect);
+
+            // 计算基础性能分参数
+            const scoreParams = deriveBaseScoreParams(techEffects);
+            const baseScore = calcBaseScore(
+              project.paramCount,
+              dataset.effectiveTokens,
+              scoreParams,
+            );
+
+            // 生成架构-能力映射矩阵
+            const archMatrix = generateArchMatrix(draft.archMatrixSeed);
+
+            // 计算完整能力向量
+            const capabilities = calculateCapabilities(
+              baseScore,
+              project.contextLength,
+              dataset,
+              archMatrix,
+              project.techIds,
+              techEffects,
+            );
+
+            const model: Model = {
+              id: `${project.id}-model`,
+              name: project.modelName,
+              paramCount: project.paramCount,
+              architecture: project.architecture,
+              contextLength: project.contextLength,
+              datasetId: project.datasetId,
+              completedAt: draft.date,
+              trainingProjectId: project.id,
+              capabilities,
+              baseScore,
+              daysSincePublished: 0,
+              evaluationResearchers: 0,
+              published: false,
+              version: 1,
+            };
+            draft.models.push(model);
           }
         } else {
           progress.push({

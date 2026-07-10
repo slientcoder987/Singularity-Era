@@ -2,15 +2,19 @@ import type { GameState, CardInstance } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { getCardSpec } from '../config/computeCards';
+import { calcActualPowerDraw, type WorkloadType } from '../utils/computeUtilization';
 
 /**
  * InfraMaintenanceSystem
  *
  * 每日扣除基础设施维护成本：
  * 1. 服务器节点：maintenanceCost
- * 2. 集群：operationalCostPerDay
+ * 2. 集群：operationalCostPerDay + storageCostPerDay
  * 3. 数据中心：maintenanceCostPerDay + 电力成本
- *    电力成本 = usedPowerMW × PUE × 24h × powerCostPerKWh
+ *    电力成本 = actualPowerKW × currentPue × 24h × powerCostPerKWh
+ *    功耗按训练/空闲负载分档计算
+ *
+ * PUE 衰减：超过 365 天未维护，currentPue 每年劣化 1%（上限 1.1×basePue）
  *
  * 检测电力过载：若数据中心实际功耗超过 maxPowerMW，
  * 发射 POWER_OVERLOAD 事件，并暂停该数据中心内的训练项目。
@@ -29,21 +33,43 @@ export class InfraMaintenanceSystem implements System {
 
     let totalClusterOps = 0;
     for (const cluster of current.clusters) {
-      totalClusterOps += cluster.operationalCostPerDay;
+      totalClusterOps += cluster.operationalCostPerDay + cluster.storageCostPerDay;
     }
 
     let totalDcMaintenance = 0;
     let totalDcPowerCost = 0;
     const overloadDcs: string[] = [];
+    const pueUpdatedDcs: Array<{ id: string; oldPue: number; newPue: number }> = [];
 
     for (const dc of current.dataCenters) {
       totalDcMaintenance += dc.maintenanceCostPerDay;
 
-      // 计算实际功耗：遍历集群中所有在线卡
-      let actualPowerMW = 0;
+      // PUE 衰减计算
+      const daysSinceMaintenance = current.date - dc.lastMaintenanceDay;
+      let effectivePue = dc.currentPue;
+      if (daysSinceMaintenance > 365) {
+        const decay = 1 + ((daysSinceMaintenance - 365) / 365) * 0.01;
+        const degradedPue = Math.min(dc.basePue * decay, dc.basePue * 1.1);
+        if (degradedPue > dc.currentPue) {
+          effectivePue = degradedPue;
+          pueUpdatedDcs.push({ id: dc.id, oldPue: dc.currentPue, newPue: effectivePue });
+        }
+      }
+
+      // 计算实际功耗：遍历集群中所有在线卡，按训练/空闲分档
+      const trainingCardSpecs: Array<NonNullable<ReturnType<typeof getCardSpec>>> = [];
+      const idleCardSpecs: Array<NonNullable<ReturnType<typeof getCardSpec>>> = [];
+
       for (const clusterId of dc.clusters) {
         const cluster = current.clusters.find((c) => c.id === clusterId);
         if (!cluster) continue;
+
+        // 判断该集群是否有活跃训练项目
+        const hasActiveTraining = current.trainingProjects.some(
+          (p) => p.clusterId === clusterId && p.status === 'training',
+        );
+        const workload: WorkloadType = hasActiveTraining ? 'training' : 'idle';
+
         for (const nodeId of cluster.nodes) {
           const node = current.serverNodes.find((n) => n.id === nodeId);
           if (!node) continue;
@@ -53,7 +79,13 @@ export class InfraMaintenanceSystem implements System {
               const card = pool?.find((c) => c.uid === cardUid);
               if (card && card.status === 'online') {
                 const spec = getCardSpec(modelId);
-                actualPowerMW += (spec?.maxPowerDrawKW ?? 0) / 1000;
+                if (spec) {
+                  if (workload === 'training') {
+                    trainingCardSpecs.push(spec);
+                  } else {
+                    idleCardSpecs.push(spec);
+                  }
+                }
                 break;
               }
             }
@@ -61,9 +93,14 @@ export class InfraMaintenanceSystem implements System {
         }
       }
 
-      // 电力成本 = 功耗(MW) × PUE × 24h × 电价(/kWh) × 1000(kW/MW)
-      const powerCostKW = actualPowerMW * 1000;
-      const dailyPowerCost = powerCostKW * dc.pue * 24 * dc.powerCostPerKWh * deltaDays;
+      // 按负载分档计算功耗
+      const trainingPowerKW = calcActualPowerDraw(trainingCardSpecs, 'training');
+      const idlePowerKW = calcActualPowerDraw(idleCardSpecs, 'idle');
+      const totalPowerKW = trainingPowerKW + idlePowerKW;
+      const actualPowerMW = totalPowerKW / 1000;
+
+      // 电力成本 = 功耗(kW) × currentPue × 24h × 电价(/kWh) × deltaDays
+      const dailyPowerCost = totalPowerKW * effectivePue * 24 * dc.powerCostPerKWh * deltaDays;
       totalDcPowerCost += dailyPowerCost;
 
       // 过载检测
@@ -74,11 +111,18 @@ export class InfraMaintenanceSystem implements System {
 
     const totalCost = (totalNodeMaintenance + totalClusterOps + totalDcMaintenance) * deltaDays + totalDcPowerCost;
 
-    if (totalCost > 0) {
-      state.update((draft) => {
+    // 扣款 + PUE 更新
+    state.update((draft) => {
+      if (totalCost > 0) {
         draft.resources['funds'] = (draft.resources['funds'] ?? 0) - totalCost;
-      });
-    }
+      }
+
+      // 更新 PUE 衰减
+      for (const { id, newPue } of pueUpdatedDcs) {
+        const d = draft.dataCenters.find((x) => x.id === id);
+        if (d) d.currentPue = newPue;
+      }
+    });
 
     // 2. 处理电力过载：暂停过载数据中心内的训练项目
     if (overloadDcs.length > 0) {

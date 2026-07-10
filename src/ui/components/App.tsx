@@ -4,7 +4,6 @@ import { GameControls, type PanelView } from './GameControls';
 import { ResourceDevPanel } from './ResourceDevPanel';
 import { EmployeePanel } from './EmployeePanel';
 import { InfrastructurePanel } from './InfrastructurePanel';
-// 模型面板模块待实现
 import { ModelPanel } from './ModelPanel';
 import styles from '../styles/App.module.css';
 
@@ -12,7 +11,6 @@ import styles from '../styles/App.module.css';
  * App
  *
  * 应用根组件：顶部状态栏 + 控制栏 + 页面切换面板。
- * 点击控制栏"资源"/"员工"/"基建"按钮，在顶栏下方展开对应页面。
  */
 export function App() {
   const [activeView, setActiveView] = useState<PanelView>(null);
@@ -47,7 +45,7 @@ export function App() {
       )}
 
       <footer className={styles.footer}>
-        Singularity.AI · 资源 + 员工 + 基础设施系统已启用 · core (纯 TS) ⇄ ui (React + CSS Modules)
+        Singularity.AI · 资源 + 员工 + 基建 + 训练系统已启用 · core (纯 TS) ⇄ ui (React + CSS Modules)
       </footer>
     </div>
   );

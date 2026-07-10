@@ -4,16 +4,8 @@ import type { ResourceDefinition } from './resources/ResourceTypes';
 import type { Employee } from './entities/Employee';
 import type { ServerNode, Cluster, DataCenter, TechEffect } from './entities/Infrastructure';
 import type { TrainingProject } from './entities/TrainingProject';
-import type { ModelEntity } from './entities/ModelEntity';
-import type { BenchmarkResult, HiddenDimSignal } from './entities/Benchmark';
-import type { TriggeredCompetitorEvent } from './entities/CompetitorEvent';
-import type { ArchCapabilityMatrix } from './config/architectures';
-import type { CapabilityDim } from './config/capabilityDims';
+import type { Model } from './entities/Model';
 import type { Dataset } from './entities/Dataset';
-import type { ResearchProject } from './entities/ResearchProject';
-import type { ActiveCrisis } from './entities/ActiveCrisis';
-import type { TrainingLogEntry } from './entities/TrainingLog';
-import type { PricingStrategy } from './commands/MarketCommands';
 
 /**
  * 硬件采购订单
@@ -68,6 +60,8 @@ export interface GameData {
 
   /** 员工列表 */
   employees: Employee[];
+  /** 模型列表 */
+  models: Model[];
 
   // ===== 基础设施层级 =====
   /** 服务器节点列表 */
@@ -78,60 +72,34 @@ export interface GameData {
   dataCenters: DataCenter[];
 
   // ===== 训练系统 =====
-  /** 训练项目列表（旧系统，保留兼容） */
+  /** 训练项目列表 */
   trainingProjects: TrainingProject[];
-
-  // ===== 大模型训练系统 =====
-  /** 模型实体列表 */
-  models: ModelEntity[];
-  /** 本局架构-能力映射矩阵 */
-  archMatrix: ArchCapabilityMatrix;
-  /** 所有 benchmark 评估记录 */
-  benchmarkResults: BenchmarkResult[];
-  /** 隐性维度模糊信号列表 */
-  hiddenDimSignals: HiddenDimSignal[];
-  /** 已触发的竞品事件列表 */
-  triggeredEvents: TriggeredCompetitorEvent[];
-  /** 已通过科技解锁可见的隐性维度 */
-  revealedHiddenDims: CapabilityDim[];
-  /** 当前市场压力 0-1 */
-  marketPressure: number;
-  /** 总用户数 */
-  totalUsers: number;
-  /** 品牌声誉 0-100 */
-  brandReputation: number;
 
   // ===== 科技效果（预留，后续科研系统填充） =====
   /** 当前激活的科技效果列表 */
   activeTechEffects: TechEffect[];
 
-  // ===== P1 新增 =====
+  // ===== 基础设施事件日志 =====
+  /** 基础设施事件日志（最近 100 条） */
+  infraEventLog: InfraEventEntry[];
+
+  // ===== P0 大模型训练机制 =====
   /** 数据集列表 */
   datasets: Dataset[];
-  /** 研发项目列表 */
-  researchProjects: ResearchProject[];
-  /** 已完成科技 id */
-  completedTechs: string[];
-  /** 活跃危机事件列表 */
-  activeCrises: ActiveCrisis[];
-  /** 训练日志 */
-  trainingLogs: TrainingLogEntry[];
-  /** 定价策略 */
-  pricingStrategy: PricingStrategy;
-  /** 月收入 */
-  monthlyRevenue: number;
-  /** 月成本 */
-  monthlyCost: number;
-  /** 用户细分 */
-  userSegments: {
-    enterprise: number;
-    developer: number;
-    personal: number;
-  };
-  /** 口碑 0-100 */
-  reputation: number;
-  /** 最佳已发布模型 id */
-  bestReleasedModelId: string | null;
+  /** 已解锁技术 id 列表 */
+  unlockedTechs: string[];
+  /** 正在研发的技术 */
+  researchingTech: { techId: string; progressDays: number; totalDays: number } | null;
+  /** 本局架构-能力映射矩阵种子 */
+  archMatrixSeed: number;
+}
+
+/** 基础设施事件日志条目 */
+export interface InfraEventEntry {
+  date: number;
+  type: string;
+  message: string;
+  severity: 'info' | 'warning' | 'critical';
 }
 
 /** 状态变更监听器 */

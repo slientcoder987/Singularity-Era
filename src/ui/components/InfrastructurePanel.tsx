@@ -8,12 +8,21 @@ import {
   CreateClusterCommand,
   BuildDataCenterCommand,
   MoveClusterCommand,
+  AddNodeToClusterCommand,
+  UpgradeNodeInterconnectCommand,
+  UpgradeClusterStorageCommand,
+  MaintainDataCenterCommand,
+  RepairCardCommand,
+  ScrapCardCommand,
+  RepairNodeCommand,
+  MaintainNodeCommand,
 } from '../../core/commands/InfraCommands';
 import {
   NODE_TEMPLATES,
   CLUSTER_NETWORKS,
   DATA_CENTER_LOCATIONS,
   COOLING_TYPES,
+  STORAGE_CONFIGS,
 } from '../../core/config/infrastructure';
 import { getCardSpec } from '../../core/config/computeCards';
 import styles from '../styles/App.module.css';
@@ -58,13 +67,11 @@ function TopologyTab() {
   const clusters = useGameState((s) => s.clusters);
   const serverNodes = useGameState((s) => s.serverNodes);
   const resourceMeta = useGameState((s) => s.resourceMeta);
+  const infraEventLog = useGameState((s) => s.infraEventLog);
 
-  // 未加入集群的节点
   const freeNodes = serverNodes.filter((n) => n.clusterId === null);
-  // 未加入数据中心的集群
   const freeClusters = clusters.filter((c) => c.dataCenterId === null);
 
-  // 获取卡实例
   const getCard = (uid: string): CardInstance | undefined => {
     for (const key of Object.keys(resourceMeta)) {
       const pool = resourceMeta[key] as CardInstance[] | undefined;
@@ -74,7 +81,6 @@ function TopologyTab() {
     return undefined;
   };
 
-  // 计算节点聚合显存/带宽
   const getNodeMemory = (nodeId: string): { memoryGB: number; bandwidthGBs: number } => {
     const node = serverNodes.find((n) => n.id === nodeId);
     if (!node) return { memoryGB: 0, bandwidthGBs: 0 };
@@ -97,13 +103,13 @@ function TopologyTab() {
 
   return (
     <div className={styles.tabBody}>
-      {/* 数据中心 → 集群 → 节点 → 卡 */}
       {dataCenters.map((dc) => (
         <div key={dc.id} className={styles.treeNode}>
           <div className={styles.devRow}>
             <span className={styles.devRowLabel}>🏢 {dc.name}</span>
             <span className={styles.devHint}>
-              {dc.maxPowerMW} MW · PUE {dc.pue} · {dc.coolingType} · {dc.clusters.length} 集群
+              {dc.maxPowerMW}MW · PUE {dc.currentPue.toFixed(3)}(基准{dc.basePue.toFixed(2)}) · {dc.coolingType} · {dc.clusters.length}集群 · ${dc.powerCostPerKWh}/kWh
+              {dc.currentPue > dc.basePue * 1.02 && ' · ⚠️ 需维护'}
             </span>
           </div>
           {dc.clusters.map((clusterId) => {
@@ -114,19 +120,22 @@ function TopologyTab() {
                 <div className={styles.devRow}>
                   <span className={styles.devRowLabel}>🔗 {cluster.name}</span>
                   <span className={styles.devHint}>
-                    {cluster.network} · {cluster.nodes.length}/{cluster.maxNodes} 节点 · +{(cluster.utilizationBonus * 100).toFixed(0)}%
+                    {cluster.network} · {cluster.nodes.length}/{cluster.maxNodes}节点 · +{(cluster.utilizationBonus * 100).toFixed(0)}% · {cluster.networkBandwidth}GB/s · TP×{cluster.maxTPDegree}
                   </span>
                 </div>
                 {cluster.nodes.map((nodeId) => {
                   const node = serverNodes.find((n) => n.id === nodeId);
                   if (!node) return null;
                   const { memoryGB, bandwidthGBs } = getNodeMemory(nodeId);
+                  const nvGen = node.nvswitchGeneration
+                    ? ` · NVSwitch Gen${node.nvswitchGeneration}`
+                    : '';
                   return (
                     <div key={nodeId} className={styles.treeChild}>
                       <div className={styles.devRow}>
                         <span className={styles.devRowLabel}>🖥️ {node.name}</span>
                         <span className={styles.devHint}>
-                          {node.installedCards.length}/{node.slotCount} 卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}
+                          {node.installedCards.length}/{node.slotCount}卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}({node.interconnectBandwidth}GB/s) · 可靠性{node.reliability}{nvGen}
                         </span>
                       </div>
                       {node.installedCards.map((cardUid) => {
@@ -150,25 +159,27 @@ function TopologyTab() {
         </div>
       ))}
 
-      {/* 游离集群 */}
       {freeClusters.map((cluster) => (
         <div key={cluster.id} className={styles.treeNode}>
           <div className={styles.devRow}>
             <span className={styles.devRowLabel}>🔗 {cluster.name}（未入数据中心）</span>
             <span className={styles.devHint}>
-              {cluster.network} · {cluster.nodes.length}/{cluster.maxNodes} 节点
+              {cluster.network} · {cluster.nodes.length}/{cluster.maxNodes}节点 · {cluster.networkBandwidth}GB/s · TP×{cluster.maxTPDegree}
             </span>
           </div>
           {cluster.nodes.map((nodeId) => {
             const node = serverNodes.find((n) => n.id === nodeId);
             if (!node) return null;
             const { memoryGB, bandwidthGBs } = getNodeMemory(nodeId);
+            const nvGen = node.nvswitchGeneration
+              ? ` · NVSwitch Gen${node.nvswitchGeneration}`
+              : '';
             return (
               <div key={nodeId} className={styles.treeChild}>
                 <div className={styles.devRow}>
                   <span className={styles.devRowLabel}>🖥️ {node.name}</span>
                   <span className={styles.devHint}>
-                    {node.installedCards.length}/{node.slotCount} 卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}
+                    {node.installedCards.length}/{node.slotCount}卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}({node.interconnectBandwidth}GB/s) · 可靠性{node.reliability}{nvGen}
                   </span>
                 </div>
               </div>
@@ -177,7 +188,6 @@ function TopologyTab() {
         </div>
       ))}
 
-      {/* 游离节点 */}
       {freeNodes.length > 0 && (
         <div className={styles.treeNode}>
           <div className={styles.devRow}>
@@ -185,12 +195,15 @@ function TopologyTab() {
           </div>
           {freeNodes.map((node) => {
             const { memoryGB, bandwidthGBs } = getNodeMemory(node.id);
+            const nvGen = node.nvswitchGeneration
+              ? ` · NVSwitch Gen${node.nvswitchGeneration}`
+              : '';
             return (
               <div key={node.id} className={styles.treeChild}>
                 <div className={styles.devRow}>
                   <span className={styles.devRowLabel}>🖥️ {node.name}</span>
                   <span className={styles.devHint}>
-                    {node.installedCards.length}/{node.slotCount} 卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}
+                    {node.installedCards.length}/{node.slotCount}卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}({node.interconnectBandwidth}GB/s) · 可靠性{node.reliability}{nvGen}
                   </span>
                 </div>
                 {node.installedCards.length < node.slotCount && (
@@ -203,11 +216,28 @@ function TopologyTab() {
           })}
         </div>
       )}
+
+      {/* 事件日志 */}
+      {infraEventLog.length > 0 && (
+        <div style={{ marginTop: '12px' }}>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>事件日志</span>
+          </div>
+          {infraEventLog.slice(-20).reverse().map((evt, i) => (
+            <div key={i} className={styles.devRow}>
+              <span className={styles.devHint} style={{
+                color: evt.severity === 'critical' ? '#ff6b6b' :
+                       evt.severity === 'warning' ? '#ffb454' : '#e6f0ff',
+              }}>
+                第{evt.date}天 · {evt.message}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
-
-/* ============== 建造视图 ============== */
 
 function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
   const funds = useGameState((s) => s.resources['funds'] ?? 0);
@@ -216,7 +246,6 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
   const clusters = useGameState((s) => s.clusters);
   const dataCenters = useGameState((s) => s.dataCenters);
 
-  // 选中的节点（用于安装卡/创建集群）
   const [selectedNodeId, setSelectedNodeId] = useState<string>('');
   const [selectedCardUid, setSelectedCardUid] = useState<string>('');
   const [selectedNetworkId, setSelectedNetworkId] = useState<string>(CLUSTER_NETWORKS[0].id);
@@ -227,7 +256,29 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
   const [selectedDcId, setSelectedDcId] = useState<string>('');
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
 
-  // 未加入集群的节点
+  // 批量买节点
+  const [nodeBuyQty, setNodeBuyQty] = useState<Record<string, number>>({});
+
+  // 自动安装
+  const [autoInstallNodeId, setAutoInstallNodeId] = useState<string>('');
+  const [autoInstallCardModel, setAutoInstallCardModel] = useState<string>('');
+
+  // 集群追加节点
+  const [addNodeClusterId, setAddNodeClusterId] = useState<string>('');
+  const [addNodeIds, setAddNodeIds] = useState<Set<string>>(new Set());
+
+  // 升级与维护
+  const [upgradeNodeId, setUpgradeNodeId] = useState<string>('');
+  const [upgradeTargetTpl, setUpgradeTargetTpl] = useState<string>('');
+  const [upgradeStorageClusterId, setUpgradeStorageClusterId] = useState<string>('');
+  const [upgradeStorageTarget, setUpgradeStorageTarget] = useState<string>('');
+  const [maintainDcId, setMaintainDcId] = useState<string>('');
+
+  // 节点维护 + 卡修复
+  const [maintainNodeId, setMaintainNodeId] = useState<string>('');
+  const [repairNodeId, setRepairNodeId] = useState<string>('');
+  const [repairCardUid, setRepairCardUid] = useState<string>('');
+
   const freeNodesForCluster = serverNodes.filter((n) => n.clusterId === null);
   const selectedNetwork = CLUSTER_NETWORKS.find((n) => n.id === selectedNetworkId) ?? CLUSTER_NETWORKS[0];
   const clusterBuildCost = selectedNetwork.costPerNode * selectedNodeIds.size;
@@ -235,6 +286,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
   const selectedLocation = DATA_CENTER_LOCATIONS.find((l) => l.id === selectedLocationId) ?? DATA_CENTER_LOCATIONS[0];
   const selectedCooling = COOLING_TYPES.find((c) => c.id === selectedCoolingId) ?? COOLING_TYPES[0];
   const dcBuildCost = selectedLocation.buildCostPerMW * dcPower + selectedCooling.extraBuildCostPerMW * dcPower;
+  const actualPue = selectedCooling.basePUE;
 
   const toggleNodeId = (id: string) => {
     setSelectedNodeIds((prev) => {
@@ -245,7 +297,6 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
     });
   };
 
-  // 获取未安装的卡
   const getUninstalledCards = (): Array<{ uid: string; modelId: string }> => {
     const cards: Array<{ uid: string; modelId: string }> = [];
     for (const key of Object.keys(resourceMeta)) {
@@ -268,39 +319,54 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>服务器节点</span>
       </div>
-      {NODE_TEMPLATES.map((tpl) => (
-        <div key={tpl.id} className={styles.devRow}>
-          <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
-            · {tpl.name}
-          </span>
-          <span className={styles.devHint}>
-            {tpl.slotCount} 卡槽 · {tpl.powerSupplyKW} kW · ${tpl.cost.toLocaleString()}
-          </span>
-          <button
-            className={styles.btn}
-            disabled={funds < tpl.cost}
-            onClick={() => game.executeCommand(new BuyServerNodeCommand(tpl.id))}
-          >
-            购买
-          </button>
-        </div>
-      ))}
+      {NODE_TEMPLATES.map((tpl) => {
+        const qty = nodeBuyQty[tpl.id] ?? 1;
+        const totalCost = tpl.cost * qty;
+        return (
+          <div key={tpl.id} className={styles.devRow}>
+            <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+              · {tpl.name}
+            </span>
+            <span className={styles.devHint}>
+              {tpl.slotCount}槽 · {tpl.interconnect}({tpl.interconnectBandwidth}GB/s) · {tpl.powerSupplyKW}kW · {tpl.nodeType} · ${tpl.cost.toLocaleString()}
+            </span>
+            <input
+              className={styles.input}
+              type="number"
+              min={1}
+              step={1}
+              value={qty}
+              onChange={(e) => setNodeBuyQty((prev) => ({ ...prev, [tpl.id]: Math.max(1, Number(e.target.value) || 1) }))}
+              style={{ width: '50px' }}
+            />
+            <button
+              className={styles.btn}
+              disabled={funds < totalCost}
+              onClick={() => {
+                for (let i = 0; i < qty; i++) {
+                  game.executeCommand(new BuyServerNodeCommand(tpl.id));
+                }
+              }}
+            >
+              买 {qty} 台 · ${totalCost.toLocaleString()}
+            </button>
+          </div>
+        );
+      })}
 
-      {/* 安装卡到节点（批量） */}
+      {/* 安装卡到节点 */}
       {serverNodes.length > 0 && uninstalledCards.length > 0 && (
         <>
           <div className={styles.devRow}>
-            <span className={styles.devRowLabel}>批量安装显卡</span>
+            <span className={styles.devRowLabel}>安装显卡</span>
           </div>
-
-          {/* 单卡安装（保留原能力） */}
           <div className={styles.devRow}>
             <select
               className={styles.select}
               value={selectedCardUid}
               onChange={(e) => setSelectedCardUid(e.target.value)}
             >
-              <option value="">选择单张显卡...</option>
+              <option value="">选择显卡...</option>
               {uninstalledCards.map((c) => {
                 const spec = getCardSpec(c.modelId);
                 return (
@@ -335,9 +401,66 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
               安装
             </button>
           </div>
+        </>
+      )}
 
-          {/* 批量安装：按型号填数量，自动分配到指定节点 */}
-          <BatchInstallCards game={game} />
+      {/* 自动安装显卡到节点 */}
+      {serverNodes.length > 0 && uninstalledCards.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>自动安装显卡</span>
+          </div>
+          <div className={styles.devRow}>
+            <select
+              className={styles.select}
+              value={autoInstallNodeId}
+              onChange={(e) => setAutoInstallNodeId(e.target.value)}
+            >
+              <option value="">选择节点...</option>
+              {serverNodes
+                .filter((n) => n.installedCards.length < n.slotCount)
+                .map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} ({n.installedCards.length}/{n.slotCount} · 空{n.slotCount - n.installedCards.length}槽)
+                  </option>
+                ))}
+            </select>
+            <select
+              className={styles.select}
+              value={autoInstallCardModel}
+              onChange={(e) => setAutoInstallCardModel(e.target.value)}
+            >
+              <option value="">所有型号</option>
+              {Array.from(new Set(uninstalledCards.map((c) => c.modelId))).map((modelId) => {
+                const spec = getCardSpec(modelId);
+                return (
+                  <option key={modelId} value={modelId}>
+                    {spec?.name ?? modelId}
+                  </option>
+                );
+              })}
+            </select>
+            <button
+              className={styles.btn}
+              disabled={!autoInstallNodeId}
+              onClick={() => {
+                const node = serverNodes.find((n) => n.id === autoInstallNodeId);
+                if (!node) return;
+                const availableSlots = node.slotCount - node.installedCards.length;
+                const candidates = uninstalledCards.filter(
+                  (c) => !autoInstallCardModel || c.modelId === autoInstallCardModel,
+                );
+                const toInstall = candidates.slice(0, availableSlots);
+                for (const card of toInstall) {
+                  game.executeCommand(new InstallCardCommand(card.uid, autoInstallNodeId));
+                }
+                setAutoInstallNodeId('');
+                setAutoInstallCardModel('');
+              }}
+            >
+              自动填满 ({uninstalledCards.filter((c) => !autoInstallCardModel || c.modelId === autoInstallCardModel).length} 张可用)
+            </button>
+          </div>
         </>
       )}
 
@@ -359,7 +482,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
             >
               {CLUSTER_NETWORKS.map((n) => (
                 <option key={n.id} value={n.id}>
-                  {n.name} (+{(n.utilizationBonus * 100).toFixed(0)}% · ${n.costPerNode.toLocaleString()}/节点 · 上限 {n.maxNodes} 节点)
+                  {n.name} · {n.networkBandwidth}GB/s · TP×{n.maxTPDegree} · +{(n.utilizationBonus * 100).toFixed(0)}% · ${n.costPerNode.toLocaleString()}/节点
                 </option>
               ))}
             </select>
@@ -378,7 +501,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
                     style={{ marginRight: '6px' }}
                   />
                   <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
-                    {n.name} ({n.installedCards.length}/{n.slotCount} 卡 · {n.interconnect})
+                    {n.name} ({n.installedCards.length}/{n.slotCount}卡 · {n.interconnect} · {n.interconnectBandwidth}GB/s)
                   </span>
                 </label>
               );
@@ -386,7 +509,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
           )}
           <div className={styles.devRow}>
             <span className={styles.devHint}>
-              已选 {selectedNodeIds.size} 节点 · 费用 ${clusterBuildCost.toLocaleString()}
+              已选 {selectedNodeIds.size} 节点 · 费用 ${clusterBuildCost.toLocaleString()} · 上限 {selectedNetwork.maxNodes} 节点
             </span>
             <button
               className={styles.btn}
@@ -404,6 +527,345 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
         </>
       )}
 
+      {/* 集群追加节点 */}
+      {clusters.length > 0 && freeNodesForCluster.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>集群追加节点</span>
+          </div>
+          <div className={styles.devRow}>
+            <select
+              className={styles.select}
+              value={addNodeClusterId}
+              onChange={(e) => {
+                setAddNodeClusterId(e.target.value);
+                setAddNodeIds(new Set());
+              }}
+            >
+              <option value="">选择集群...</option>
+              {clusters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.nodes.length}/{c.maxNodes} 节点)
+                </option>
+              ))}
+            </select>
+          </div>
+          {addNodeClusterId && (() => {
+            const targetCluster = clusters.find((c) => c.id === addNodeClusterId);
+            if (!targetCluster) return null;
+            const remainingSlots = targetCluster.maxNodes - targetCluster.nodes.length;
+            if (remainingSlots <= 0) {
+              return <div className={styles.devHint}>该集群已满</div>;
+            }
+            return (
+              <>
+                {freeNodesForCluster.slice(0, remainingSlots).map((n) => {
+                  const checked = addNodeIds.has(n.id);
+                  return (
+                    <label key={n.id} className={styles.devRow} style={{ cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setAddNodeIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(n.id)) next.delete(n.id);
+                            else next.add(n.id);
+                            return next;
+                          });
+                        }}
+                        style={{ marginRight: '6px' }}
+                      />
+                      <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                        {n.name} ({n.installedCards.length}/{n.slotCount}卡 · {n.interconnect} · {n.interconnectBandwidth}GB/s)
+                      </span>
+                    </label>
+                  );
+                })}
+                <div className={styles.devRow}>
+                  <span className={styles.devHint}>
+                    已选 {addNodeIds.size} 节点 · 集群剩余 {remainingSlots} 槽位
+                  </span>
+                  <button
+                    className={styles.btn}
+                    disabled={addNodeIds.size === 0}
+                    onClick={() => {
+                      for (const nid of addNodeIds) {
+                        game.executeCommand(new AddNodeToClusterCommand(addNodeClusterId, nid));
+                      }
+                      setAddNodeIds(new Set());
+                    }}
+                  >
+                    追加 {addNodeIds.size} 节点
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </>
+      )}
+
+      {/* 升级与维护 */}
+      {serverNodes.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>升级与维护</span>
+          </div>
+
+          {/* 节点互联升级 */}
+          <div className={styles.devRow}>
+            <select
+              className={styles.select}
+              value={upgradeNodeId}
+              onChange={(e) => setUpgradeNodeId(e.target.value)}
+            >
+              <option value="">选择节点...</option>
+              {serverNodes.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.name} ({n.interconnect} {n.interconnectBandwidth}GB/s)
+                </option>
+              ))}
+            </select>
+            <select
+              className={styles.select}
+              value={upgradeTargetTpl}
+              onChange={(e) => setUpgradeTargetTpl(e.target.value)}
+            >
+              <option value="">选择目标互联...</option>
+              {(() => {
+                const node = serverNodes.find((n) => n.id === upgradeNodeId);
+                if (!node) return null;
+                return NODE_TEMPLATES
+                  .filter((t) => t.interconnectBandwidth > node.interconnectBandwidth)
+                  .map((t) => {
+                    const cost = (t.interconnectBandwidth - node.interconnectBandwidth) * 50;
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {t.interconnect}({t.interconnectBandwidth}GB/s) · ${cost.toLocaleString()}
+                      </option>
+                    );
+                  });
+              })()}
+            </select>
+            <button
+              className={styles.btn}
+              disabled={!upgradeNodeId || !upgradeTargetTpl}
+              onClick={() => {
+                game.executeCommand(new UpgradeNodeInterconnectCommand(upgradeNodeId, upgradeTargetTpl));
+                setUpgradeNodeId('');
+                setUpgradeTargetTpl('');
+              }}
+            >
+              升级互联
+            </button>
+          </div>
+
+          {/* 集群存储升级 */}
+          {clusters.length > 0 && (
+            <div className={styles.devRow}>
+              <select
+                className={styles.select}
+                value={upgradeStorageClusterId}
+                onChange={(e) => setUpgradeStorageClusterId(e.target.value)}
+              >
+                <option value="">选择集群...</option>
+                {clusters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({STORAGE_CONFIGS.find((s) => s.id === c.storageType)?.name ?? c.storageType} {c.storageIO}GB/s)
+                  </option>
+                ))}
+              </select>
+              <select
+                className={styles.select}
+                value={upgradeStorageTarget}
+                onChange={(e) => setUpgradeStorageTarget(e.target.value)}
+              >
+                <option value="">选择目标存储...</option>
+                {(() => {
+                  const cluster = clusters.find((c) => c.id === upgradeStorageClusterId);
+                  if (!cluster) return null;
+                  const currentIdx = STORAGE_CONFIGS.findIndex((s) => s.id === cluster.storageType);
+                  return STORAGE_CONFIGS
+                    .filter((_s, idx) => idx > currentIdx)
+                    .map((s) => {
+                      const cost = s.upgradeCostPerNode * cluster.nodes.length;
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.name}({s.io}GB/s) · ${cost.toLocaleString()}
+                        </option>
+                      );
+                    });
+                })()}
+              </select>
+              <button
+                className={styles.btn}
+                disabled={!upgradeStorageClusterId || !upgradeStorageTarget}
+                onClick={() => {
+                  game.executeCommand(new UpgradeClusterStorageCommand(upgradeStorageClusterId, upgradeStorageTarget as 'nvme_raid' | 'distributed_fs' | 'all_flash_cluster'));
+                  setUpgradeStorageClusterId('');
+                  setUpgradeStorageTarget('');
+                }}
+              >
+                升级存储
+              </button>
+            </div>
+          )}
+
+          {/* 数据中心维护 */}
+          {dataCenters.length > 0 && (
+            <div className={styles.devRow}>
+              <select
+                className={styles.select}
+                value={maintainDcId}
+                onChange={(e) => setMaintainDcId(e.target.value)}
+              >
+                <option value="">选择数据中心...</option>
+                {dataCenters.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} (PUE {d.currentPue.toFixed(3)})
+                  </option>
+                ))}
+              </select>
+              <button
+                className={styles.btn}
+                disabled={!maintainDcId}
+                onClick={() => {
+                  game.executeCommand(new MaintainDataCenterCommand(maintainDcId));
+                  setMaintainDcId('');
+                }}
+              >
+                维护 · $5,000
+              </button>
+            </div>
+          )}
+
+          {/* 节点维护 */}
+          {serverNodes.some((n) => n.reliability < n.baseReliability) && (
+            <div className={styles.devRow}>
+              <select
+                className={styles.select}
+                value={maintainNodeId}
+                onChange={(e) => setMaintainNodeId(e.target.value)}
+              >
+                <option value="">选择节点...</option>
+                {serverNodes.filter((n) => n.reliability < n.baseReliability).map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} (可靠性 {n.reliability}/{n.baseReliability} · ${(n.maintenanceCost * 5).toLocaleString()})
+                  </option>
+                ))}
+              </select>
+              <button
+                className={styles.btn}
+                disabled={!maintainNodeId}
+                onClick={() => {
+                  game.executeCommand(new MaintainNodeCommand(maintainNodeId));
+                  setMaintainNodeId('');
+                }}
+              >
+                维护节点
+              </button>
+            </div>
+          )}
+
+          {/* 节点修复（节点故障后所有卡离线） */}
+          {(() => {
+            const nodeHasOfflineCard = (nodeId: string): boolean => {
+              const node = serverNodes.find((n) => n.id === nodeId);
+              if (!node) return false;
+              for (const cardUid of node.installedCards) {
+                for (const modelId of Object.keys(resourceMeta)) {
+                  const pool = resourceMeta[modelId] as CardInstance[] | undefined;
+                  const card = pool?.find((c) => c.uid === cardUid);
+                  if (card && card.status === 'offline') return true;
+                }
+              }
+              return false;
+            };
+            const brokenNodes = serverNodes.filter((n) => nodeHasOfflineCard(n.id));
+            if (brokenNodes.length === 0) return null;
+            return (
+              <div className={styles.devRow}>
+                <select
+                  className={styles.select}
+                  value={repairNodeId}
+                  onChange={(e) => setRepairNodeId(e.target.value)}
+                >
+                  <option value="">选择故障节点...</option>
+                  {brokenNodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name} · 修复 ${(n.maintenanceCost * 10).toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className={styles.btn}
+                  disabled={!repairNodeId}
+                  onClick={() => {
+                    game.executeCommand(new RepairNodeCommand(repairNodeId));
+                    setRepairNodeId('');
+                  }}
+                >
+                  修复节点
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* 卡修复/报废 */}
+          {(() => {
+            const faultedCards: Array<{ uid: string; modelId: string; status: string; specName: string; repairCost: number }> = [];
+            for (const modelId of Object.keys(resourceMeta)) {
+              const pool = resourceMeta[modelId] as CardInstance[] | undefined;
+              if (!pool) continue;
+              for (const card of pool) {
+                if (card.status === 'offline' || card.status === 'broken') {
+                  const spec = getCardSpec(modelId);
+                  faultedCards.push({
+                    uid: card.uid,
+                    modelId,
+                    status: card.status,
+                    specName: spec?.name ?? modelId,
+                    repairCost: spec ? Math.ceil(spec.unitCost * 0.20) : 0,
+                  });
+                }
+              }
+            }
+            if (faultedCards.length === 0) return null;
+            return (
+              <div className={styles.devRow}>
+                <select
+                  className={styles.select}
+                  value={repairCardUid}
+                  onChange={(e) => setRepairCardUid(e.target.value)}
+                >
+                  <option value="">选择故障卡...</option>
+                  {faultedCards.map((c) => (
+                    <option key={c.uid} value={c.uid}>
+                      {c.specName} ({c.status}) · {c.uid.slice(-6)} · {c.status === 'offline' ? `修复 $${c.repairCost}` : '报废回收'}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className={styles.btn}
+                  disabled={!repairCardUid}
+                  onClick={() => {
+                    const card = faultedCards.find((c) => c.uid === repairCardUid);
+                    if (card?.status === 'offline') {
+                      game.executeCommand(new RepairCardCommand(repairCardUid));
+                    } else {
+                      game.executeCommand(new ScrapCardCommand(repairCardUid));
+                    }
+                    setRepairCardUid('');
+                  }}
+                >
+                  {faultedCards.find((c) => c.uid === repairCardUid)?.status === 'broken' ? '报废' : '修复'}
+                </button>
+              </div>
+            );
+          })()}
+        </>
+      )}
+
       {/* 建数据中心 */}
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>数据中心</span>
@@ -416,7 +878,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
         >
           {DATA_CENTER_LOCATIONS.map((l) => (
             <option key={l.id} value={l.id}>
-              {l.name} · ${l.powerCostPerKWh}/kWh · ${l.buildCostPerMW.toLocaleString()}/MW
+              {l.name} · ${l.powerCostPerKWh}/kWh
             </option>
           ))}
         </select>
@@ -444,7 +906,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
       </div>
       <div className={styles.devRow}>
         <span className={styles.devHint}>
-          建造费用 ${dcBuildCost.toLocaleString()}
+          实际 PUE {actualPue.toFixed(3)} · 建造费用 ${dcBuildCost.toLocaleString()} · 日维护 ${selectedLocation.maintenanceCostPerDay}
         </span>
         <button
           className={styles.btn}
@@ -486,7 +948,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
               <option value="">选择数据中心...</option>
               {dataCenters.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.name}
+                  {d.name} ({d.maxPowerMW}MW · PUE {d.pue.toFixed(2)})
                 </option>
               ))}
             </select>
@@ -504,97 +966,6 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-/* ============== 批量安装显卡 ============== */
-
-function BatchInstallCards({ game }: { game: ReturnType<typeof useGame> }) {
-  const serverNodes = useGameState((s) => s.serverNodes);
-  const resourceMeta = useGameState((s) => s.resourceMeta);
-  const [selectedModelId, setSelectedModelId] = useState('');
-  const [installQty, setInstallQty] = useState(1);
-  const [targetNodeId, setTargetNodeId] = useState('');
-
-  // 未安装的卡按型号分组
-  const uninstalledByModel: Record<string, CardInstance[]> = {};
-  for (const modelId of Object.keys(resourceMeta)) {
-    const pool = resourceMeta[modelId] as CardInstance[] | undefined;
-    if (!pool) continue;
-    for (const card of pool) {
-      if (card.location === null && card.status === 'online') {
-        if (!uninstalledByModel[modelId]) uninstalledByModel[modelId] = [];
-        uninstalledByModel[modelId].push(card);
-      }
-    }
-  }
-
-  const targetNode = serverNodes.find((n) => n.id === targetNodeId);
-  const availableSlots = targetNode ? targetNode.slotCount - targetNode.installedCards.length : 0;
-  const availableCards = uninstalledByModel[selectedModelId]?.length ?? 0;
-  const actualQty = Math.min(installQty, availableCards, availableSlots > 0 ? availableSlots : 0);
-
-  const handleBatchInstall = () => {
-    if (!targetNode) return;
-    const cards = uninstalledByModel[selectedModelId] ?? [];
-    for (let i = 0; i < actualQty; i++) {
-      game.executeCommand(new InstallCardCommand(cards[i].uid, targetNodeId));
-    }
-    setInstallQty(1);
-  };
-
-  return (
-    <div className={styles.devRow} style={{ flexWrap: 'wrap', gap: '8px' }}>
-      <select
-        className={styles.select}
-        value={selectedModelId}
-        onChange={(e) => setSelectedModelId(e.target.value)}
-      >
-        <option value="">选择型号...</option>
-        {Object.keys(uninstalledByModel).map((modelId) => (
-          <option key={modelId} value={modelId}>
-            {getCardSpec(modelId)?.name ?? modelId}（闲置 {uninstalledByModel[modelId].length} 张）
-          </option>
-        ))}
-      </select>
-
-      <input
-        className={styles.input}
-        type="number"
-        min={1}
-        step={1}
-        value={installQty}
-        onChange={(e) => setInstallQty(Math.max(1, Number(e.target.value)))}
-        style={{ width: '60px' }}
-      />
-      <span className={styles.devHint}>张</span>
-
-      <select
-        className={styles.select}
-        value={targetNodeId}
-        onChange={(e) => setTargetNodeId(e.target.value)}
-      >
-        <option value="">选择目标节点...</option>
-        {serverNodes
-          .filter((n) => n.installedCards.length < n.slotCount)
-          .map((n) => (
-            <option key={n.id} value={n.id}>
-              {n.name}（空 {n.slotCount - n.installedCards.length}/{n.slotCount}）
-            </option>
-          ))}
-      </select>
-
-      <button
-        className={styles.btn}
-        disabled={actualQty <= 0}
-        onClick={handleBatchInstall}
-      >
-        批量安装
-        {actualQty > 0 && actualQty !== installQty && (
-          <span className={styles.devHint}>（实际可装 {actualQty} 张）</span>
-        )}
-      </button>
     </div>
   );
 }
