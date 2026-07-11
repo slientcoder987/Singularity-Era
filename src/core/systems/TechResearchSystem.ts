@@ -6,7 +6,7 @@
 import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
-import { TECH_MAP, type TechId } from '../config/techTree';
+import { TECH_MAP } from '../config/techTree';
 
 export class TechResearchSystem implements System {
   name = 'TechResearchSystem';
@@ -16,7 +16,7 @@ export class TechResearchSystem implements System {
     if (!current.researchingTech) return;
 
     const research = current.researchingTech;
-    const tech = TECH_MAP[research.techId as TechId];
+    const tech = TECH_MAP[research.techId];
     if (!tech) return;
 
     const newProgress = research.progressDays + deltaDays;
@@ -26,11 +26,9 @@ export class TechResearchSystem implements System {
       if (!draft.researchingTech) return;
 
       if (isCompleted) {
-        // 完成研发
-        const techId = draft.researchingTech.techId as TechId;
+        const techId = draft.researchingTech.techId;
         const completedTech = TECH_MAP[techId];
         draft.unlockedTechs.push(techId);
-        // 激活技术效果
         if (completedTech) {
           draft.activeTechEffects.push(completedTech.effect);
         }

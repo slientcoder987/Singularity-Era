@@ -61,6 +61,15 @@ export class TrainingSystem implements System {
           ? draft.dataCenters.find((d) => d.id === cluster.dataCenterId)
           : undefined;
 
+        // 计算集群中单节点最大卡槽数
+        let maxSlotsPerNode = 8;
+        if (cluster) {
+          for (const nid of cluster.nodes) {
+            const n = draft.serverNodes.find((x) => x.id === nid);
+            if (n && n.slotCount > maxSlotsPerNode) maxSlotsPerNode = n.slotCount;
+          }
+        }
+
         const modelParams: ModelParams = {
           paramCount: project.paramCount,
           architecture: project.architecture,
@@ -72,6 +81,7 @@ export class TrainingSystem implements System {
           dc,
           draft.activeTechEffects,
           modelParams,
+          maxSlotsPerNode,
         );
 
         // 每日推进 = 有效算力 × deltaDays
@@ -114,10 +124,11 @@ export class TrainingSystem implements System {
               .map((t) => t.effect);
 
             // 计算基础性能分参数
+            // paramCount 为十亿单位，effectiveTokens 为十亿单位，转换为原始个数
             const scoreParams = deriveBaseScoreParams(techEffects);
             const baseScore = calcBaseScore(
-              project.paramCount,
-              dataset.effectiveTokens,
+              project.paramCount * 1e9,
+              dataset.effectiveTokens * 1e9,
               scoreParams,
             );
 
@@ -125,7 +136,7 @@ export class TrainingSystem implements System {
             const archMatrix = generateArchMatrix(draft.archMatrixSeed);
 
             // 计算完整能力向量
-            const capabilities = calculateCapabilities(
+            const result = calculateCapabilities(
               baseScore,
               project.contextLength,
               dataset,
@@ -143,12 +154,15 @@ export class TrainingSystem implements System {
               datasetId: project.datasetId,
               completedAt: draft.date,
               trainingProjectId: project.id,
-              capabilities,
+              capabilities: result.capabilities,
+              rawCapabilities: result.rawCapabilities,
               baseScore,
               daysSincePublished: 0,
               evaluationResearchers: 0,
               published: false,
               version: 1,
+              audited: false,
+              usedInResearch: false,
             };
             draft.models.push(model);
           }

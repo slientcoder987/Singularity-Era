@@ -28,6 +28,8 @@ export interface Model {
   trainingProjectId: string;
   /** 真实能力向量（完整精度，玩家不可直接见） */
   capabilities: CapabilityVector;
+  /** 涌现惩罚前的原始能力值（用于 UI 判断是否涌现） */
+  rawCapabilities: CapabilityVector;
   /** 基础性能分（所有维度共享） */
   baseScore: number;
   /** 已发布的天数（用于社区反馈降噪） */
@@ -38,4 +40,8 @@ export interface Model {
   published: boolean;
   /** 模型版本号 */
   version: number;
+  /** 是否已审计（防止 AI 失控） */
+  audited: boolean;
+  /** 是否用于内部研发 */
+  usedInResearch: boolean;
 }

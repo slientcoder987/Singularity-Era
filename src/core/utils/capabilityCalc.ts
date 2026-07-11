@@ -13,31 +13,31 @@ import type { TechEffect } from '../entities/Infrastructure';
 export interface BaseScoreParams {
   /** E 系数，默认 1 */
   E: number;
-  /** A 系数，默认 1.5 */
+  /** A 系数，默认 1500（已按原始参数量标定） */
   A: number;
-  /** B 系数，默认 1.5 */
+  /** B 系数，默认 1500（已按原始 token 数标定） */
   B: number;
-  /** α 指数，默认 0.3 */
+  /** α 指数，默认 1/3 */
   alpha: number;
-  /** β 指数，默认 0.3 */
+  /** β 指数，默认 1/3 */
   beta: number;
 }
 
-/** 默认参数（经数值校准：7B+初始数据→约650分） */
+/** 默认参数（经数值校准：7B+初始数据→约670分） */
 export const DEFAULT_BASE_SCORE_PARAMS: BaseScoreParams = {
   E: 1,
-  A: 1.5,
-  B: 1.5,
-  alpha: 0.333,
-  beta: 0.333,
+  A: 400,
+  B: 400,
+  alpha: 1 / 3,
+  beta: 1 / 3,
 };
 
 /**
- * 计算基础性能分
+ * 计算基础性能分（Chinchilla 缩放定律）
  * score = -log(1 - E/(E + A/N^α + B/D^β)) × 1000
  *
- * @param paramCount N，参数量（亿）
- * @param effectiveTokens D，有效 token 数（十亿）
+ * @param paramCount   N，参数量（原始个数，如 7B → 7000000000）
+ * @param effectiveTokens D，有效 token 数（原始个数）
  * @param params 基础性能分参数
  */
 export function calcBaseScore(
@@ -46,13 +46,13 @@ export function calcBaseScore(
   params: BaseScoreParams = DEFAULT_BASE_SCORE_PARAMS,
 ): number {
   const { E, A, B, alpha, beta } = params;
-  const nTerm = A / Math.pow(Math.max(paramCount, 0.01), alpha);
-  const dTerm = B / Math.pow(Math.max(effectiveTokens, 0.01), beta);
+  const nTerm = A / Math.pow(Math.max(paramCount, 1), alpha);
+  const dTerm = B / Math.pow(Math.max(effectiveTokens, 1), beta);
   const denom = E + nTerm + dTerm;
   const ratio = E / denom;
   if (ratio >= 1) return 9999;
   if (ratio <= 0) return 0;
-  return -Math.log(1 - ratio) * 1000;
+  return -Math.log10(1 - ratio) * 1000;
 }
 
 /**
@@ -96,7 +96,7 @@ export function calcContextFactor(contextLength: number, threshold: number): num
   if (contextLength <= 1) return 0;
   if (threshold <= 1) return 1;
   const x = contextLength < threshold ? 1.25 : 0.25;
-  const ratio = Math.log(contextLength) / Math.log(threshold);
+  const ratio = Math.log10(contextLength) / Math.log10(threshold);
   return Math.pow(Math.max(ratio, 0), x);
 }
 
@@ -151,7 +151,9 @@ function collectCapabilityBonuses(effects: TechEffect[]): Partial<Record<Capabil
 /**
  * 计算模型完整能力向量
  *
- * 流程：baseScore → 涌现惩罚 → 上下文影响 → 数据质量 → 架构加成 → 技术加成
+ * 流程：baseScore → 上下文影响 → 数据质量 → 架构加成 → 技术加成 → 涌现惩罚
+ *
+ * 返回 { capabilities（涌现惩罚后）, rawCapabilities（涌现惩罚前，用于UI判断涌现） }
  */
 export function calculateCapabilities(
   baseScore: number,
@@ -160,21 +162,19 @@ export function calculateCapabilities(
   archMatrix: Record<string, Partial<Record<CapabilityId, number>>>,
   unlockedTechs: string[],
   techEffects: TechEffect[],
-): CapabilityVector {
-  const result = {} as CapabilityVector;
+): { capabilities: CapabilityVector; rawCapabilities: CapabilityVector } {
+  const capabilities = {} as CapabilityVector;
+  const rawCapabilities = {} as CapabilityVector;
   const capabilityBonuses = collectCapabilityBonuses(techEffects);
 
   for (const def of CAPABILITIES) {
-    // 1. 涌现惩罚
-    const effectiveBase = calcEmergencePenalty(baseScore, def.emergenceThreshold);
-
-    // 2. 上下文影响
+    // 1. 上下文影响
     const ctxFactor = calcContextFactor(contextLength, def.contextThreshold);
 
-    // 3. 数据质量加成
+    // 2. 数据质量加成
     const dataBonus = calcDataQualityBonus(def, dataset);
 
-    // 4. 架构加成
+    // 3. 架构加成
     let archBonus = 1.0;
     for (const techId of unlockedTechs) {
       const archEntry = archMatrix[techId];
@@ -183,18 +183,22 @@ export function calculateCapabilities(
       }
     }
 
-    // 5. 技术直接加成
+    // 4. 技术直接加成
     let techBonus = 1.0;
     if (capabilityBonuses[def.id]) {
       techBonus += capabilityBonuses[def.id]!;
     }
 
-    // 6. 最终能力
-    const capability = effectiveBase * ctxFactor * dataBonus * archBonus * techBonus;
-    result[def.id] = Math.max(0, capability);
+    // 5. 加总后能力（涌现惩罚前）
+    const rawCapability = baseScore * ctxFactor * dataBonus * archBonus * techBonus;
+
+    // 6. 涌现惩罚（最后一步，对所有加成之后的总分做惩罚）
+    const capability = calcEmergencePenalty(rawCapability, def.emergenceThreshold);
+    rawCapabilities[def.id] = Math.max(0, rawCapability);
+    capabilities[def.id] = Math.max(0, capability);
   }
 
-  return result;
+  return { capabilities, rawCapabilities };
 }
 
 /**
@@ -240,4 +244,27 @@ export function observeCapabilities(
     observed[def.id] = observeWithNoise(trueValue, sigma, rng);
   }
   return observed;
+}
+
+/**
+ * Chinchilla 缩放定律 — 训练所需算力计算
+ *
+ * 公式：
+ *   d = 2 × N^(1/3)                        (临界序列深度)
+ *   FLOPs = 6 × N × D × (1 + n/(4d))        (带长序列修正的总算力)
+ *   computeDays = FLOPs / (10^12 × 86400)    (转换为 TFLOPS·天)
+ *
+ * @param paramCount     N，参数量（原始个数，如 7B → 7,000,000,000）
+ * @param trainingTokens D，训练 token 数（原始个数）
+ * @param contextLength  n，上下文长度（token 数）
+ * @returns 训练所需总算力，单位 TFLOPS·天
+ */
+export function calcTrainingCompute(
+  paramCount: number,
+  trainingTokens: number,
+  contextLength: number,
+): number {
+  const d = 2 * Math.pow(paramCount, 1 / 3);
+  const flops = 6 * paramCount * trainingTokens * (1 + contextLength / (4 * d));
+  return flops / (1e12 * 86400);
 }

@@ -4,7 +4,7 @@
 import type { Command } from '../interfaces/Command';
 import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
-import { TECH_MAP, type TechId } from '../config/techTree';
+import { TECH_MAP } from '../config/techTree';
 
 /**
  * 开始研发技术
@@ -12,7 +12,7 @@ import { TECH_MAP, type TechId } from '../config/techTree';
  * 检查前置技术、资金，设置 researchingTech 状态。
  */
 export class StartResearchCommand implements Command {
-  constructor(private readonly techId: TechId) {}
+  constructor(private readonly techId: string) {}
 
   execute(state: GameState, events: EventBus): void {
     const current = state.read();

@@ -47,32 +47,14 @@ export class PowerSystem implements System {
       totalPowerKW += onlineCount * spec.powerPerCard;
     }
 
-    // 2. 计算电费
+    // 2. 仅发射电力平衡事件，电费由 InfraMaintenanceSystem 统一扣除
+    //    避免双重扣费。
     const capacityKW = current.resources['power_kw'] ?? 0;
-    const hoursPerDay = 24;
-    let cost = 0;
-    let shortage = false;
-
-    if (totalPowerKW <= capacityKW) {
-      // 正常供电
-      cost = totalPowerKW * hoursPerDay * POWER_CONFIG.pricePerKWh * deltaDays;
-    } else {
-      // 超出部分按惩罚电价 2 倍计费
-      const normalCost = capacityKW * hoursPerDay * POWER_CONFIG.pricePerKWh * deltaDays;
-      const excess = totalPowerKW - capacityKW;
-      const penaltyCost = excess * hoursPerDay * POWER_CONFIG.pricePerKWh * 2 * deltaDays;
-      cost = normalCost + penaltyCost;
-      shortage = true;
-    }
-
-    if (cost > 0) {
-      state.addResource('funds', -cost);
-    }
+    const shortage = totalPowerKW > capacityKW;
 
     events.emit('POWER_BALANCE', {
       consumptionKW: totalPowerKW,
       capacityKW,
-      cost,
       shortage,
       deltaDays,
     });

@@ -23,17 +23,15 @@ import type { ComputeCardSpec } from '../entities/ComputeCard';
  */
 export class ComputeHardwareSystem implements System {
   name = 'ComputeHardwareSystem';
-  private readonly registry: ResourceRegistry;
   private readonly specs = new Map<string, ComputeCardSpec>();
 
-  constructor(registry: ResourceRegistry) {
-    this.registry = registry;
+  constructor(_registry: ResourceRegistry) {
     for (const spec of COMPUTE_CARD_SPECS) {
       this.specs.set(spec.resourceId, spec);
     }
   }
 
-  update(state: GameState, events: EventBus, deltaDays: number): void {
+  update(state: GameState, events: EventBus, _deltaDays: number): void {
     const current = state.read();
     const today = current.date;
 
@@ -80,49 +78,8 @@ export class ComputeHardwareSystem implements System {
       }
     }
 
-    // 2. 计算卡磨损与故障
-    const hardwareDefs = this.registry.getByCategory('hardware');
-    let totalBroken = 0;
-    let tflopsLost = 0;
-    const brokenReport: Array<{ modelId: string; count: number }> = [];
-
-    state.update((draft) => {
-      for (const def of hardwareDefs) {
-        const spec = this.specs.get(def.id);
-        if (!spec) continue;
-        const pool = (draft.resourceMeta[def.id] as CardInstance[]) ?? [];
-        if (pool.length === 0) continue;
-
-        let brokenCount = 0;
-        for (const card of pool) {
-          if (card.status === 'online') {
-            card.age += deltaDays;
-            // 每日按 wearPerDay 概率故障
-            if (Math.random() < spec.wearPerDay * deltaDays) {
-              card.status = 'broken';
-              brokenCount += 1;
-            }
-          }
-        }
-
-        if (brokenCount > 0) {
-          // 同步资源数值：在线数量 = 总数 - broken
-          const online = pool.filter((c) => c.status !== 'broken').length;
-          draft.resources[def.id] = online;
-          // 同步算力
-          const lostTFlops = brokenCount * spec.tflopsPerCard;
-          draft.resources['compute_power'] = (draft.resources['compute_power'] ?? 0) - lostTFlops;
-          totalBroken += brokenCount;
-          tflopsLost += lostTFlops;
-          brokenReport.push({ modelId: def.id, count: brokenCount });
-        }
-      }
-    });
-
-    if (totalBroken > 0) {
-      events.emit('CARD_BREAKDOWN', brokenReport);
-      events.emit('COMPUTE_POWER_CHANGED', -tflopsLost);
-    }
+    // 注意：计算卡磨损与故障由 InfrastructureFailureSystem 统一处理，
+    // 避免双重故障计数。
   }
 
   /** 获取某型号当前可用的（在线未分配）卡实例列表 */

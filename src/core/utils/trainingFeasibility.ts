@@ -1,5 +1,7 @@
 import type { ComputeCardSpec } from '../entities/ComputeCard';
 import type { Cluster, ServerNode } from '../entities/Infrastructure';
+import type { GameState, CardInstance } from '../GameState';
+import { getCardSpec } from '../config/computeCards';
 
 /**
  * 训练可行性评估结果
@@ -170,4 +172,168 @@ export function assessTrainingFeasibility(
     parallelPenalty,
     warnings,
   };
+}
+
+/* ========================================================================
+ * diagnoseTraining — 训练可行性诊断
+ * ====================================================================== */
+
+/** 单条诊断信息 */
+export interface DiagnosisIssue {
+  /** 严重性 */
+  severity: 'blocker' | 'warning';
+  /** 问题分类 */
+  category: 'memory' | 'gpu_count' | 'interconnect' | 'network' | 'storage' | 'context' | 'power';
+  /** 人类可读描述 */
+  message: string;
+}
+
+/**
+ * 训练可行性诊断
+ *
+ * 返回诊断问题列表。空列表 = 可行。
+ * 用于在 UI 上显示为什么当前参数无法训练。
+ */
+export function diagnoseTraining(
+  paramCount: number,
+  contextLength: number,
+  _architecture: string,
+  clusterId: string,
+  state: GameState,
+): DiagnosisIssue[] {
+  const current = state.read();
+  const issues: DiagnosisIssue[] = [];
+
+  // 1. 集群存在？
+  const cluster = current.clusters.find((c) => c.id === clusterId);
+  if (!cluster) {
+    issues.push({ severity: 'blocker', category: 'network', message: '所选集群不存在' });
+    return issues;
+  }
+
+  // 2. 收集集群内所有在线卡规格
+  const cardSpecs: ComputeCardSpec[] = [];
+  const nodes: ServerNode[] = [];
+  for (const nodeId of cluster.nodes) {
+    const node = current.serverNodes.find((n) => n.id === nodeId);
+    if (!node) continue;
+    nodes.push(node);
+    for (const cardUid of node.installedCards) {
+      for (const modelId of Object.keys(current.resourceMeta)) {
+        const pool = current.resourceMeta[modelId] as CardInstance[] | undefined;
+        const card = pool?.find((c) => c.uid === cardUid);
+        if (card && card.status === 'online' && card.assignedProjectId === null) {
+          const spec = getCardSpec(modelId);
+          if (spec) cardSpecs.push(spec);
+          break;
+        }
+      }
+    }
+  }
+
+  if (cardSpecs.length === 0) {
+    issues.push({ severity: 'blocker', category: 'gpu_count', message: '集群内无在线GPU，请先安装计算卡' });
+    return issues;
+  }
+
+  if (nodes.length === 0) {
+    issues.push({ severity: 'blocker', category: 'gpu_count', message: '集群内无可用节点' });
+    return issues;
+  }
+
+  // 3. 估算显存需求
+  const paramB = paramCount; // 十亿
+  const weightMem = paramB * 2;
+  const activationMem = weightMem * 2.2;
+  const totalMemPerReplica = weightMem + activationMem;
+
+  // 4. 检查单卡显存
+  const minCardMem = Math.min(...cardSpecs.map((s) => s.memoryGB));
+  const maxCardMem = Math.max(...cardSpecs.map((s) => s.memoryGB));
+  const maxCardName = cardSpecs.find((s) => s.memoryGB === maxCardMem)?.name ?? '未知';
+  const tpSize = Math.max(1, Math.ceil(totalMemPerReplica / maxCardMem));
+
+  if (totalMemPerReplica > maxCardMem) {
+    const needCrossNode = tpSize > Math.max(...nodes.map((n) => n.slotCount));
+    issues.push({
+      severity: 'warning',
+      category: 'memory',
+      message: `模型需 ${totalMemPerReplica.toFixed(0)}GB 显存，最大单卡 ${maxCardName} 仅 ${maxCardMem}GB，需至少 ${tpSize} 张卡做张量并行（TP=${tpSize}）${needCrossNode ? '，超出单节点槽位数，需跨节点 TP' : ''}`,
+    });
+  }
+
+  if (totalMemPerReplica <= minCardMem) {
+    issues.push({
+      severity: 'warning',
+      category: 'memory',
+      message: `模型仅需 ${totalMemPerReplica.toFixed(0)}GB 显存，单卡即可装载（仅需 DP）`,
+    });
+  }
+
+  // 5. 检查并行GPU数量
+  const availGpus = cardSpecs.length;
+  if (tpSize > availGpus) {
+    issues.push({
+      severity: 'blocker',
+      category: 'gpu_count',
+      message: `需要至少 ${tpSize} 张GPU（TP=${tpSize}），但集群仅 ${availGpus} 张在线GPU`,
+    });
+  }
+
+  // 6. 检查互联带宽
+  const maxNodeBW = Math.max(...nodes.map((n) => n.interconnectBandwidth));
+  const minIBW = contextLength > 32768 ? 600 : (tpSize > 1 ? 200 : 0);
+  if (minIBW > 0 && maxNodeBW < minIBW) {
+    const nvGen = nodes[0]?.nvswitchGeneration;
+    issues.push({
+      severity: 'blocker',
+      category: 'interconnect',
+      message: `需要节点互联带宽 ≥${minIBW}GB/s${
+        contextLength > 32768 ? '（长上下文训练需 NVSwitch）' : '（模型并行通信需求）'
+      }，当前最大 ${maxNodeBW}GB/s${nvGen ? `（NVSwitch Gen${nvGen}）` : ''}，请升级节点互联或减少参数量`,
+    });
+  }
+
+  // 7. 检查网络带宽
+  if (tpSize > Math.max(...nodes.map((n) => n.slotCount)) && cluster.networkBandwidth < 10) {
+    issues.push({
+      severity: 'blocker',
+      category: 'network',
+      message: `跨节点 TP 需要集群网络带宽 ≥10GB/s，当前 ${cluster.networkBandwidth.toFixed(0)}GB/s（${cluster.networkTopology ?? 'unknown'}），请使用更高带宽网络`,
+    });
+  }
+
+  // 8. 检查存储IO
+  const minStorageIO = availGpus * 0.1;
+  if (cluster.storageIO < minStorageIO) {
+    issues.push({
+      severity: 'warning',
+      category: 'storage',
+      message: `建议存储 IO ≥${minStorageIO.toFixed(1)}GB/s（按 GPU 数估算），当前 ${cluster.storageIO}GB/s（${cluster.storageType}），可能拖慢数据加载`,
+    });
+  }
+
+  // 9. 上下文长度与 NVSwitch 代际
+  if (contextLength > 131072) {
+    const nvGen = nodes[0]?.nvswitchGeneration ?? 0;
+    if (nvGen < 2) {
+      issues.push({
+        severity: 'warning',
+        category: 'context',
+        message: `超长上下文（≥128K）建议 NVSwitch Gen2+，当前 Gen${nvGen}`,
+      });
+    }
+  }
+  if (contextLength > 1048576) {
+    const nvGen = nodes[0]?.nvswitchGeneration ?? 0;
+    if (nvGen < 3) {
+      issues.push({
+        severity: 'warning',
+        category: 'context',
+        message: `百万级上下文需 NVSwitch Gen3+，当前 Gen${nvGen}`,
+      });
+    }
+  }
+
+  return issues;
 }

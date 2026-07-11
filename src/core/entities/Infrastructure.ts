@@ -141,4 +141,13 @@ export type TechEffect =
   | { type: 'reduce_compute_cost'; value: number }
   | { type: 'reduce_memory'; value: number }
   | { type: 'extend_context'; multiplier: number }
-  | { type: 'capability_bonus'; capability: string; bonus: number };
+  | { type: 'capability_bonus'; capability: string; bonus: number }
+  // P1 新增训练相关效果
+  | { type: 'improve_research_speed'; value: number }
+  | { type: 'improve_experiment_confidence'; value: number }
+  | { type: 'reduce_training_crash_risk'; value: number }
+  | { type: 'enable_synthetic_data'; qualityBonus: number }
+  | { type: 'enable_distillation'; efficiencyBonus: number }
+  | { type: 'improve_data_quality'; value: number }
+  | { type: 'reduce_legal_risk'; value: number }
+  | { type: 'improve_alignment'; value: number };

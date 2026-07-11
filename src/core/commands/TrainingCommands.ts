@@ -4,6 +4,8 @@ import type { EventBus } from '../EventBus';
 import type { TrainingProject } from '../entities/TrainingProject';
 import type { ModelParams } from '../utils/computeUtilization';
 import { getCardSpec } from '../config/computeCards';
+import { diagnoseTraining } from '../utils/trainingFeasibility';
+import { calcTrainingCompute } from '../utils/capabilityCalc';
 
 /** 生成唯一 id */
 function genId(prefix: string): string {
@@ -75,8 +77,7 @@ export function allocateCardsFromCluster(
 /**
  * 启动训练项目
  *
- * 不再直接指定 cardIds，而是指定 clusterId 和资源规格。
- * 系统从集群中分配满足显存要求的卡组。
+ * 算力需求根据 Chinchilla 缩放定律自动计算，基于参数量、数据集 tokens 和上下文长度。
  */
 export class StartTrainingCommand implements Command {
   constructor(
@@ -84,8 +85,6 @@ export class StartTrainingCommand implements Command {
     private readonly paramCount: number,
     private readonly architecture: string,
     private readonly clusterId: string,
-    /** 训练所需总算力 TFLOPS·天 */
-    private readonly computeTotal: number,
     /** 每卡最低显存要求 GB（可选，默认从模型参数推算） */
     private readonly minMemoryPerCard?: number,
     /** 上下文长度（token 数，默认 4096） */
@@ -106,6 +105,20 @@ export class StartTrainingCommand implements Command {
       return;
     }
 
+    // 诊断训练可行性
+    const issues = diagnoseTraining(
+      this.paramCount, this.contextLength, this.architecture,
+      this.clusterId, state,
+    );
+    const blockers = issues.filter((i) => i.severity === 'blocker');
+    if (blockers.length > 0) {
+      events.emit('TRAINING_REJECTED', {
+        reason: blockers.map((i) => i.message).join('；'),
+        issues,
+      });
+      return;
+    }
+
     // 推算最低显存需求
     const modelParams: ModelParams = {
       paramCount: this.paramCount,
@@ -120,6 +133,15 @@ export class StartTrainingCommand implements Command {
       return;
     }
 
+    // 根据 Chinchilla 缩放定律自动计算训练所需总算力
+    const dataset = current.datasets.find((d) => d.id === this.datasetId);
+    const trainingTokens = dataset ? dataset.totalTokens : 1;  // 十亿单位
+    const computeTotal = calcTrainingCompute(
+      this.paramCount * 1e9,
+      trainingTokens * 1e9,
+      this.contextLength,
+    );
+
     const today = current.date;
     const project: TrainingProject = {
       id: genId('train'),
@@ -127,15 +149,15 @@ export class StartTrainingCommand implements Command {
       paramCount: this.paramCount,
       architecture: this.architecture,
       status: 'training',
-      computeRemaining: this.computeTotal,
-      computeTotal: this.computeTotal,
+      computeRemaining: computeTotal,
+      computeTotal,
       clusterId: this.clusterId,
       nodeAssignments: assignments,
       startedAt: today,
       completedAt: null,
       pauseReason: null,
-      lastCheckpointRemaining: this.computeTotal,
-      checkpointInterval: Math.max(this.computeTotal * 0.05, 1),
+      lastCheckpointRemaining: computeTotal,
+      checkpointInterval: Math.max(computeTotal * 0.05, 1),
       lastCheckpointDay: today,
       lostFlops: 0,
       contextLength: this.contextLength,

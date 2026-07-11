@@ -192,6 +192,8 @@ export function calculateEffectiveCompute(
   dc?: DataCenter,
   techEffects: TechEffect[] = [],
   modelParams?: ModelParams,
+  /** 单节点最大卡槽数（用于判断是否跨节点，默认 8） */
+  maxSlotsPerNode: number = 8,
 ): UtilizationResult {
   const totalTflops = cardSpecs.reduce((sum, s) => sum + s.tflopsPerCard, 0);
 
@@ -308,7 +310,7 @@ export function calculateEffectiveCompute(
   }
 
   // ===== 7b. 跨节点通信惩罚 =====
-  const crossNode = requiresParallel && parallelSize > 8;
+  const crossNode = requiresParallel && parallelSize > maxSlotsPerNode;
   const crossNodePenalty = calcCrossNodePenalty(requiresParallel, parallelSize, crossNode, cluster);
   if (crossNodePenalty > 0) {
     bottlenecks.push('跨节点通信瓶颈');

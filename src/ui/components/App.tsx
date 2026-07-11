@@ -5,6 +5,7 @@ import { ResourceDevPanel } from './ResourceDevPanel';
 import { EmployeePanel } from './EmployeePanel';
 import { InfrastructurePanel } from './InfrastructurePanel';
 import { ModelPanel } from './ModelPanel';
+import { ResearchPanel } from './ResearchPanel';
 import styles from '../styles/App.module.css';
 
 /**
@@ -41,6 +42,12 @@ export function App() {
       {activeView === 'models' && (
         <main className={styles.pageMain}>
           <ModelPanel />
+        </main>
+      )}
+
+      {activeView === 'research' && (
+        <main className={styles.pageMain}>
+          <ResearchPanel />
         </main>
       )}
 

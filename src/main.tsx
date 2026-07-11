@@ -10,6 +10,9 @@ import { TrainingSystem } from './core/systems/TrainingSystem';
 import { InfraMaintenanceSystem } from './core/systems/InfraMaintenanceSystem';
 import { InfrastructureFailureSystem } from './core/systems/InfrastructureFailureSystem';
 import { TechResearchSystem } from './core/systems/TechResearchSystem';
+import { ResearchSystem } from './core/systems/ResearchSystem';
+import { RiskSystem } from './core/systems/RiskSystem';
+import { CollectionSystem } from './core/systems/CollectionSystem';
 import { INITIAL_RESOURCES } from './core/config/resources';
 import { createInitialDataset } from './core/config/datasets';
 import { GameProvider } from './ui/context/GameContext';
@@ -48,6 +51,19 @@ const initialData: GameData = {
   unlockedTechs: ['pretraining'],
   researchingTech: null,
   archMatrixSeed: Math.floor(Math.random() * 1e9),
+  // P1 研发流程与风险系统
+  researchProjects: [],
+  experimentResults: [],
+  riskState: {
+    legalDebt: 0,
+    trustDebt: 0,
+    employeeMorale: 80,
+    reputation: 50,
+    alignmentLevel: 0,
+    triggeredEvents: [],
+  },
+  dataAcquisitionCooldowns: {},
+  dataCollectionProjects: [],
 };
 
 // 1. 先创建 registry 并注册资源
@@ -55,14 +71,19 @@ const registry = new ResourceRegistry();
 registry.registerAll(INITIAL_RESOURCES);
 
 // 2. 创建 systems，注入同一个 registry
+// 系统执行顺序：
+// ComputeHardware → Power → Staff → TechResearch → Research → Collection → InfraFailure → Training → InfraMaintenance → Risk
 const systems = [
   new ComputeHardwareSystem(registry),
   new PowerSystem(registry),
   new StaffSystem(),
   new TechResearchSystem(),
-  new TrainingSystem(),
+  new ResearchSystem(),
+  new CollectionSystem(),
   new InfrastructureFailureSystem(),
+  new TrainingSystem(),
   new InfraMaintenanceSystem(),
+  new RiskSystem(),
 ];
 
 // 3. 创建 Game，传入 registry（Game 内部会再次 registerAll，幂等）

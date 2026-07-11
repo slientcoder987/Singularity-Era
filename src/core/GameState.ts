@@ -6,6 +6,9 @@ import type { ServerNode, Cluster, DataCenter, TechEffect } from './entities/Inf
 import type { TrainingProject } from './entities/TrainingProject';
 import type { Model } from './entities/Model';
 import type { Dataset } from './entities/Dataset';
+import type { ResearchProject, ExperimentResult } from './entities/ResearchProject';
+import type { RiskState } from './entities/RiskState';
+import type { DataCollectionProject } from './entities/DataCollectionProject';
 
 /**
  * 硬件采购订单
@@ -92,6 +95,18 @@ export interface GameData {
   researchingTech: { techId: string; progressDays: number; totalDays: number } | null;
   /** 本局架构-能力映射矩阵种子 */
   archMatrixSeed: number;
+
+  // ===== P1 研发流程与风险系统 =====
+  /** 研发项目列表（实验验证） */
+  researchProjects: ResearchProject[];
+  /** 实验结果历史 */
+  experimentResults: ExperimentResult[];
+  /** 风险状态 */
+  riskState: RiskState;
+  /** 数据获取冷却表：routeId → 上次执行日期 */
+  dataAcquisitionCooldowns: Record<string, number>;
+  /** 数据收集项目列表（持续运行） */
+  dataCollectionProjects: DataCollectionProject[];
 }
 
 /** 基础设施事件日志条目 */
