@@ -64,7 +64,7 @@ export class AcquireDataCommand implements Command {
       // improve_data_quality 技术效果提升获取数据的质量
       const dataQualityBonus = draft.activeTechEffects
         .filter((e) => e.type === 'improve_data_quality')
-        .reduce((s, e) => s + (e.type === 'improve_data_quality' ? e.value : 0), 0);
+        .reduce((s, e) => s + e.value, 0);
       const effectiveQuality = Math.min(1, route.quality + dataQualityBonus);
 
       const ds = draft.datasets.find((d) => d.id === this.targetDatasetId);

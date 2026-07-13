@@ -35,7 +35,7 @@ export class RiskSystem implements System {
     // 对齐技术降低 AI 失控风险概率
     const alignmentBonus = current.activeTechEffects
       .filter((e) => e.type === 'improve_alignment')
-      .reduce((s, e) => s + (e.type === 'improve_alignment' ? e.value : 0), 0);
+      .reduce((s, e) => s + e.value, 0);
 
     // 2. 检查风险事件（training_crash 已由下方独立逻辑处理，不再作为通用风险事件）
     const triggered = checkDailyRisks(
@@ -95,7 +95,7 @@ export class RiskSystem implements System {
     // 统一通过 reduce_training_crash_risk 技术效果减免，不在 calcTrainingCrashProbability 内重复应用
     const crashRiskReduction = current.activeTechEffects
       .filter((e) => e.type === 'reduce_training_crash_risk')
-      .reduce((s, e) => s + (e.type === 'reduce_training_crash_risk' ? e.value : 0), 0);
+      .reduce((s, e) => s + e.value, 0);
 
     const crashes: Array<{ projectId: string; lostFlops: number }> = [];
     state.update((draft) => {

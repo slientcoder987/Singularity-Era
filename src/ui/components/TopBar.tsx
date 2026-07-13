@@ -1,6 +1,7 @@
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { formatGameDate, formatResourceValue } from '../../core/utils';
+import { REGION_MAP } from '../../core/config/regions';
 import styles from '../styles/App.module.css';
 
 /**
@@ -16,6 +17,8 @@ export function TopBar() {
   const startDate = useGameState((s) => s.startDate);
   const resources = useGameState((s) => s.resources);
   const coreEmployees = useGameState((s) => s.employees);
+  const headquartersRegionId = useGameState((s) => s.headquartersRegionId);
+  const hqRegion = headquartersRegionId ? REGION_MAP[headquartersRegionId] : null;
 
   const topBarResources = game.registry.getTopBarResources();
   // funds, compute_power, power_kw
@@ -61,6 +64,22 @@ export function TopBar() {
             </div>
           );
         })}
+
+        {/* 总部地区 */}
+        {hqRegion && (
+          <div className={styles.statGroup}>
+            <div className={styles.statDivider} />
+            <div className={styles.stat}>
+              <span className={styles.statLabel}>
+                <span className={styles.statIcon} aria-hidden="true">🏢</span>
+                总部
+              </span>
+              <span className={styles.statValue} style={{ color: '#7ab8e0' }}>
+                {hqRegion.name}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* 员工总数（核心 + 普通） */}
         <div className={styles.statGroup}>

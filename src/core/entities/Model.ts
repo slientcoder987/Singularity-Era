@@ -44,4 +44,6 @@ export interface Model {
   audited: boolean;
   /** 是否用于内部研发 */
   usedInResearch: boolean;
+  /** 噪声种子（基于模型 ID 确定性生成，保证观测值在每次渲染中一致） */
+  noiseSeed: number;
 }

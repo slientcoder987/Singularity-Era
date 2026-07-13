@@ -164,6 +164,16 @@ export class StartTrainingCommand implements Command {
       datasetId: this.datasetId,
       techIds: [...this.techIds],
       isExperimental: this.isExperimental,
+      // 训练过程追踪初始值
+      currentLoss: 10.0,
+      validationLoss: 10.0,
+      lossHistory: [],
+      stabilityScore: 1.0,
+      lossSpikeCount: 0,
+      gradientExplosionCount: 0,
+      trainingPhase: 'warmup',
+      trainingLog: [],
+      spikeRecoveryDays: 0,
     };
 
     state.update((draft) => {

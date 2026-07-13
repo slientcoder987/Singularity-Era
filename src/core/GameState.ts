@@ -9,6 +9,9 @@ import type { Dataset } from './entities/Dataset';
 import type { ResearchProject, ExperimentResult } from './entities/ResearchProject';
 import type { RiskState } from './entities/RiskState';
 import type { DataCollectionProject } from './entities/DataCollectionProject';
+import type { RegionId } from './config/regions';
+import type { FundingRound, BoardMission } from './entities/Operations';
+import type { CompetitorState, ExternalCorp } from './entities/Competitor';
 
 /**
  * 硬件采购订单
@@ -107,6 +110,49 @@ export interface GameData {
   dataAcquisitionCooldowns: Record<string, number>;
   /** 数据收集项目列表（持续运行） */
   dataCollectionProjects: DataCollectionProject[];
+
+  // ===== P2 市场地区系统 =====
+  /** 总部所在地区 id */
+  headquartersRegionId: RegionId | null;
+  /** 已进入运营的地区 id 列表（含总部） */
+  operatingRegionIds: RegionId[];
+  /** 产品在每个地区是否已发布 */
+  publishedRegions: RegionId[];
+
+  // ===== P2 运营系统 =====
+  /** 融资轮次 */
+  fundingRounds: FundingRound[];
+  /** 运营状态 */
+  operations: {
+    dailyRevenue: number;
+    tokenRevenue: number;
+    userChurnRate: number;
+    markets: {
+      regionId: string;
+      regionName: string;
+      dailyRevenue: number;
+      marketShare: number;
+      pricePerMillion: number;
+      competitors: { name: string; share: number; capabilityScore: number }[];
+    }[];
+    tokenPricing: {
+      pricePerMillion: number;
+      inferenceAllocation: number;
+      qualityDowngrade: number;
+    };
+    deception: {
+      downgradeLevel: number;
+      stealUserData: boolean;
+      skipSafetyTesting: boolean;
+      detectionProbability: number;
+      totalDeceptions: number;
+    };
+    boardMissions: BoardMission[];
+  } | null;
+  /** 竞争对手状态列表（由 CompetitorSystem 管理） */
+  competitorStates: CompetitorState[];
+  /** 外部可渗透企业 */
+  externalCorps: ExternalCorp[];
 }
 
 /** 基础设施事件日志条目 */

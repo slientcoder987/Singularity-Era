@@ -344,7 +344,7 @@ export interface DataCenterLocation {
 export const DATA_CENTER_LOCATIONS: DataCenterLocation[] = [
   {
     id: 'nv_us',
-    name: '内华达, 美国',
+    name: '内华达, 合众国',
     powerCostPerKWh: 0.08,
     buildCostPerMW: 8_000_000,
     maintenanceCostPerDay: 500,
@@ -352,7 +352,7 @@ export const DATA_CENTER_LOCATIONS: DataCenterLocation[] = [
   },
   {
     id: 'or_us',
-    name: '俄勒冈, 美国',
+    name: '俄勒冈, 合众国',
     powerCostPerKWh: 0.06,
     buildCostPerMW: 7_000_000,
     maintenanceCostPerDay: 400,

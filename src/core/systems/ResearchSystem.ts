@@ -20,7 +20,7 @@ export class ResearchSystem implements System {
     // improve_research_speed 技术效果（如 auto_research +50%）
     const researchSpeedBonus = current.activeTechEffects
       .filter((e) => e.type === 'improve_research_speed')
-      .reduce((s, e) => s + (e.type === 'improve_research_speed' ? e.value : 0), 0);
+      .reduce((s, e) => s + e.value, 0);
 
     const completedExperiments: Array<{ archId: string | null; result: import('../entities/ResearchProject').ExperimentResult }> = [];
 

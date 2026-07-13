@@ -231,12 +231,30 @@ export function calcNoiseSigma(
 }
 
 /**
+ * 简易哈希 RNG（Mulberry32），基于种子生成确定性随机序列。
+ * 确保同一模型在每次渲染中展示一致的观测值。
+ */
+export function createSeededRng(seed: number): () => number {
+  let state = seed | 0;
+  return () => {
+    state = (state + 0x6D2B79F5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
  * 获取所有能力的观测值（带噪声）
+ *
+ * @param model       模型能力数据
+ * @param noiseSeed   噪声种子，基于模型 ID 的确定性值
  */
 export function observeCapabilities(
   model: { capabilities: CapabilityVector; evaluationResearchers: number; daysSincePublished: number },
-  rng: () => number = Math.random,
+  noiseSeed: number,
 ): Record<CapabilityId, number> {
+  const rng = createSeededRng(noiseSeed);
   const observed = {} as Record<CapabilityId, number>;
   for (const def of CAPABILITIES) {
     const trueValue = model.capabilities[def.id];

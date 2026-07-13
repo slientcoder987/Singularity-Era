@@ -45,4 +45,24 @@ export interface TrainingProject {
   techIds: string[];
   /** 是否为实验性训练（小模型验证架构映射） */
   isExperimental: boolean;
+
+  // ===== 训练过程追踪 =====
+  /** 当前训练损失 */
+  currentLoss: number;
+  /** 当前验证损失 */
+  validationLoss: number;
+  /** 损失历史（最近100个数据点） */
+  lossHistory: Array<{ day: number; progress: number; loss: number; valLoss: number }>;
+  /** 训练稳定度 0-1（初始1.0，事件会降低） */
+  stabilityScore: number;
+  /** 损失尖峰次数 */
+  lossSpikeCount: number;
+  /** 梯度爆炸次数 */
+  gradientExplosionCount: number;
+  /** 当前训练阶段 */
+  trainingPhase: 'warmup' | 'main' | 'decay';
+  /** 训练日志 */
+  trainingLog: Array<{ day: number; event: string; severity: 'info' | 'warning' | 'critical' }>;
+  /** 损失尖峰恢复剩余天数（>0时损失有额外衰减） */
+  spikeRecoveryDays: number;
 }

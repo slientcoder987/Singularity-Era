@@ -67,7 +67,7 @@ export class CollectionSystem implements System {
         // improve_data_quality 技术效果提升收集质量
         const dataQualityBonus = draft.activeTechEffects
           .filter((e) => e.type === 'improve_data_quality')
-          .reduce((s, e) => s + (e.type === 'improve_data_quality' ? e.value : 0), 0);
+          .reduce((s, e) => s + e.value, 0);
         const effectiveQuality = Math.min(route.qualityCap, project.currentQuality + dataQualityBonus);
 
         // 添加到目标数据集

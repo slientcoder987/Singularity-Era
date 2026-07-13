@@ -4,7 +4,7 @@ import styles from '../styles/App.module.css';
 
 const SPEEDS = [1, 2, 4];
 
-export type PanelView = 'resources' | 'employees' | 'infrastructure' | 'models' | 'research' | null;
+export type PanelView = 'resources' | 'employees' | 'infrastructure' | 'models' | 'research' | 'business' | null;
 
 interface GameControlsProps {
   activeView: PanelView;
@@ -94,6 +94,14 @@ export function GameControls({ activeView, onViewChange }: GameControlsProps) {
           aria-pressed={activeView === 'research'}
         >
           研发
+        </button>
+        <button
+          type="button"
+          className={`${styles.btn} ${activeView === 'business' ? styles.btnActive : ''}`}
+          onClick={() => toggleView('business')}
+          aria-pressed={activeView === 'business'}
+        >
+          经营
         </button>
       </div>
     </section>

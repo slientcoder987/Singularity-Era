@@ -274,21 +274,81 @@ function TrainingTab() {
           </div>
           {activeProjects.map((p) => {
             const progress = ((p.computeTotal - p.computeRemaining) / p.computeTotal) * 100;
+            const phaseNames: Record<string, string> = {
+              warmup: '预热', main: '主训练', decay: '衰减',
+            };
+            const phaseColors: Record<string, string> = {
+              warmup: '#ffb454', main: '#5cb85c', decay: '#7ab8e0',
+            };
+            const stabilityColor = p.stabilityScore > 0.8 ? '#5cb85c' :
+              p.stabilityScore > 0.5 ? '#ffb454' : '#ff6b6b';
             return (
-              <div key={p.id} className={styles.devRow}>
-                <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
-                  · {p.modelName} ({p.paramCount}B · {p.contextLength}ctx)
-                </span>
-                <span className={styles.devHint}>
-                  {progress.toFixed(1)}% · 剩余 {p.computeRemaining.toFixed(0)} TFLOPS·天
-                  {p.lostFlops > 0 && ` · 损失 ${p.lostFlops.toFixed(0)}`}
-                </span>
-                <button
-                  className={styles.btn}
-                  onClick={() => game.executeCommand(new CancelTrainingCommand(p.id))}
-                >
-                  取消
-                </button>
+              <div key={p.id}>
+                <div className={styles.devRow}>
+                  <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                    · {p.modelName} ({p.paramCount}B · {p.contextLength}ctx)
+                  </span>
+                  <span className={styles.devHint}>
+                    {progress.toFixed(1)}% · 剩余 {p.computeRemaining.toFixed(0)} TFLOPS·天
+                    {p.lostFlops > 0 && ` · 损失 ${p.lostFlops.toFixed(0)}`}
+                  </span>
+                  <button
+                    className={styles.btn}
+                    onClick={() => game.executeCommand(new CancelTrainingCommand(p.id))}
+                  >
+                    取消
+                  </button>
+                </div>
+                <div className={styles.devRow}>
+                  <span className={styles.devHint} style={{ minWidth: '120px' }}>
+                    阶段: <span style={{ color: phaseColors[p.trainingPhase] }}>{phaseNames[p.trainingPhase]}</span>
+                  </span>
+                  <span className={styles.devHint}>
+                    损失: {p.currentLoss.toFixed(3)} (验证 {p.validationLoss.toFixed(3)})
+                  </span>
+                  <span className={styles.devHint} style={{ color: stabilityColor }}>
+                    稳定度: {(p.stabilityScore * 100).toFixed(0)}%
+                  </span>
+                </div>
+                {/* 损失曲线迷你图 */}
+                {p.lossHistory.length > 1 && (
+                  <div className={styles.devRow}>
+                    <span className={styles.devHint} style={{ minWidth: '120px' }}>损失曲线</span>
+                    <LossSparkline history={p.lossHistory} />
+                  </div>
+                )}
+                {/* 事件统计 */}
+                {(p.lossSpikeCount > 0 || p.gradientExplosionCount > 0) && (
+                  <div className={styles.devRow}>
+                    <span className={styles.devHint} style={{ minWidth: '120px' }}>事件统计</span>
+                    <span className={styles.devHint} style={{ color: '#ffb454' }}>
+                      尖峰×{p.lossSpikeCount}
+                    </span>
+                    <span className={styles.devHint} style={{ color: '#ff6b6b' }}>
+                      爆炸×{p.gradientExplosionCount}
+                    </span>
+                  </div>
+                )}
+                {/* 最近训练日志 */}
+                {p.trainingLog.length > 0 && (
+                  <div className={styles.devRow}>
+                    <span className={styles.devHint} style={{ minWidth: '120px' }}>最近事件</span>
+                    <span className={styles.devHint} style={{ flex: 1 }}>
+                      {p.trainingLog.slice(-3).map((log) => (
+                        <span
+                          key={`${log.day}-${log.event}`}
+                          style={{
+                            display: 'block',
+                            color: log.severity === 'critical' ? '#ff6b6b' :
+                              log.severity === 'warning' ? '#ffb454' : '#888',
+                          }}
+                        >
+                          第{log.day}天: {log.event}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -321,6 +381,55 @@ function TrainingTab() {
         <div className={styles.emptyHint}>尚无训练项目，请先创建集群并安装显卡</div>
       )}
     </div>
+  );
+}
+
+/* ============== 损失曲线迷你图 ============== */
+
+function LossSparkline({
+  history,
+}: {
+  history: Array<{ day: number; progress: number; loss: number; valLoss: number }>;
+}) {
+  if (history.length < 2) return null;
+
+  // 采样：最多40个点
+  const maxPoints = 40;
+  const step = Math.max(1, Math.floor(history.length / maxPoints));
+  const sampled = history.filter((_, i) => i % step === 0);
+  if (sampled[sampled.length - 1] !== history[history.length - 1]) {
+    sampled.push(history[history.length - 1]);
+  }
+
+  const allLosses = sampled.flatMap((h) => [h.loss, h.valLoss]);
+  const minLoss = Math.min(...allLosses);
+  const maxLoss = Math.max(...allLosses);
+  const range = Math.max(maxLoss - minLoss, 0.01);
+
+  const width = 200;
+  const height = 40;
+
+  const toPath = (key: 'loss' | 'valLoss') => {
+    return sampled
+      .map((h, i) => {
+        const x = (i / (sampled.length - 1)) * width;
+        const y = height - ((h[key] - minLoss) / range) * height;
+        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  };
+
+  return (
+    <svg width={width} height={height} style={{ verticalAlign: 'middle' }}>
+      <path d={toPath('loss')} fill="none" stroke="#5cb85c" strokeWidth="1.5" />
+      <path d={toPath('valLoss')} fill="none" stroke="#7ab8e0" strokeWidth="1" strokeDasharray="2,1" />
+      <text x={2} y={10} fill="#888" fontSize="9">
+        {maxLoss.toFixed(1)}
+      </text>
+      <text x={2} y={height - 2} fill="#888" fontSize="9">
+        {minLoss.toFixed(1)}
+      </text>
+    </svg>
   );
 }
 
@@ -361,7 +470,7 @@ function ModelsTab() {
 
 function ModelDetail({ model }: { model: Model }) {
   // 生成带噪声的观测值
-  const observed = observeCapabilities(model);
+  const observed = observeCapabilities(model, model.noiseSeed);
 
   return (
     <>

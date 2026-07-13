@@ -13,8 +13,12 @@ import { TechResearchSystem } from './core/systems/TechResearchSystem';
 import { ResearchSystem } from './core/systems/ResearchSystem';
 import { RiskSystem } from './core/systems/RiskSystem';
 import { CollectionSystem } from './core/systems/CollectionSystem';
+import { RegionSystem } from './core/systems/RegionSystem';
+import { OperationsSystem } from './core/systems/OperationsSystem';
+import { CompetitorSystem } from './core/systems/CompetitorSystem';
 import { INITIAL_RESOURCES } from './core/config/resources';
 import { createInitialDataset } from './core/config/datasets';
+import { EXTERNAL_CORPS } from './core/entities/Competitor';
 import { GameProvider } from './ui/context/GameContext';
 import { App } from './ui/components/App';
 
@@ -64,15 +68,22 @@ const initialData: GameData = {
   },
   dataAcquisitionCooldowns: {},
   dataCollectionProjects: [],
+  // P2 市场地区系统
+  headquartersRegionId: null,
+  operatingRegionIds: [],
+  publishedRegions: [],
+  // P2 运营系统
+  fundingRounds: [],
+  operations: null,
+  competitorStates: [],
+  externalCorps: [...EXTERNAL_CORPS],
 };
 
 // 1. 先创建 registry 并注册资源
 const registry = new ResourceRegistry();
 registry.registerAll(INITIAL_RESOURCES);
 
-// 2. 创建 systems，注入同一个 registry
-// 系统执行顺序：
-// ComputeHardware → Power → Staff → TechResearch → Research → Collection → InfraFailure → Training → InfraMaintenance → Risk
+// ComputeHardware → Power → Staff → TechResearch → Research → Collection → InfraFailure → Training → InfraMaintenance → Operations → Competitor → Risk → Region
 const systems = [
   new ComputeHardwareSystem(registry),
   new PowerSystem(registry),
@@ -83,7 +94,10 @@ const systems = [
   new InfrastructureFailureSystem(),
   new TrainingSystem(),
   new InfraMaintenanceSystem(),
+  new OperationsSystem(),
+  new CompetitorSystem(),
   new RiskSystem(),
+  new RegionSystem(),
 ];
 
 // 3. 创建 Game，传入 registry（Game 内部会再次 registerAll，幂等）
