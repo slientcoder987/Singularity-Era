@@ -41,8 +41,27 @@ export interface Skill {
   cost: number;
 }
 
-/** 员工状态 */
-export type EmployeeStatus = 'idle' | 'assigned';
+/**
+ * 员工状态
+ * - idle: 空闲，可分配
+ * - assigned: 已分配到项目
+ * - training: 培训中，不可分配
+ */
+export type EmployeeStatus = 'idle' | 'assigned' | 'training';
+
+/** 员工绩效记录（每月评估一次） */
+export interface PerformanceRecord {
+  /** 评估日期（day） */
+  evalDay: number;
+  /** 出勤率（0-1） */
+  attendance: number;
+  /** 项目贡献分（0-100） */
+  projectContribution: number;
+  /** 绩效总分（0-100） */
+  score: number;
+  /** 绩效等级 */
+  grade: 'S' | 'A' | 'B' | 'C';
+}
 
 /** 员工实体 */
 export interface Employee {
@@ -66,4 +85,22 @@ export interface Employee {
   hireDay: number;
   /** 经验值 */
   experience: number;
+
+  // ===== 扩展字段 =====
+  /** 所属部门 id（无部门为 undefined） */
+  departmentId?: string;
+  /** 是否已授股权 */
+  hasEquity?: boolean;
+  /** 股权授予日（用于 2 年不可离职约束） */
+  equityGrantedDay?: number;
+  /** 上次发奖金日（用于 30 天冷却） */
+  lastBonusDay?: number;
+  /** 当前培训项目 id（无则为 undefined） */
+  trainingId?: string;
+  /** 本月工作天数（用于绩效评估） */
+  monthlyWorkDays?: number;
+  /** 本月项目贡献累积（用于绩效评估） */
+  monthlyContribution?: number;
+  /** 最近一次绩效记录 */
+  lastPerformance?: PerformanceRecord;
 }

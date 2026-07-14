@@ -131,7 +131,7 @@ function getCompetitorRegionQuality(competitor: CompetitorState, regionId: strin
   return competitorHasLocalLang ? base * 1.05 : base;
 }
 
-/** 计算竞争者在某个细分市场的得分 */
+/** 计算竞争者在某个细分市场的得分（考虑渗透削弱） */
 function calcCompetitorSegmentScore(
   competitor: CompetitorState,
   segment: MarketSegment,
@@ -145,7 +145,9 @@ function calcCompetitorSegmentScore(
   }
   const baseScore = totalWeight > 0 ? rawScore / totalWeight : 0;
   const qualityMult = getCompetitorRegionQuality(competitor, regionId);
-  return baseScore * qualityMult;
+  // ★ 渗透削弱：渗透等级 1→-5%, 2→-10%, 3→-15%
+  const infiltrationPenalty = 1 - competitor.infiltrationLevel * 0.05;
+  return baseScore * qualityMult * infiltrationPenalty;
 }
 
 // ============================================================

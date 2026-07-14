@@ -2,6 +2,7 @@ import type { GameState, CardInstance } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { getCardSpec } from '../config/computeCards';
+import { getStaffInfraFailureReduction } from '../utils/crossSystemUtils';
 
 /**
  * InfrastructureFailureSystem
@@ -47,6 +48,8 @@ export class InfrastructureFailureSystem implements System {
       }
 
       // 2. 计算卡老化 + 故障
+      // 系统工程师降低故障率
+      const staffFailureMult = getStaffInfraFailureReduction(draft);
       for (const modelId of Object.keys(draft.resourceMeta)) {
         const pool = draft.resourceMeta[modelId] as CardInstance[];
         if (!Array.isArray(pool)) continue;
@@ -58,7 +61,7 @@ export class InfrastructureFailureSystem implements System {
           if (!spec) continue;
 
           const loadFactor = card.assignedProjectId ? 1.0 : 0.3;
-          const dailyFailProb = spec.wearPerDay * (1 + card.age / 1000) * loadFactor;
+          const dailyFailProb = spec.wearPerDay * (1 + card.age / 1000) * loadFactor * staffFailureMult;
 
           if (Math.random() < dailyFailProb * deltaDays) {
             const isMajor = Math.random() < 0.5;

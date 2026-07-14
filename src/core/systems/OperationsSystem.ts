@@ -14,6 +14,8 @@ import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { calcTotalRevenue, calcUserChurn } from '../utils/marketCalc';
 import { COMPUTE_CARD_SPECS } from '../config/computeCards';
+import { getStaffRevenueMultiplier, calcMoraleImpactFromOperations } from '../utils/crossSystemUtils';
+import { clamp } from '../utils';
 
 export class OperationsSystem implements System {
   name = 'OperationsSystem';
@@ -58,10 +60,19 @@ export class OperationsSystem implements System {
       if (!draft.operations) return;
 
       // 收入入账
-      const totalIncome = actualRevenue + tokenRevenue;
+      const staffRevMult = getStaffRevenueMultiplier(draft);
+      const totalIncome = (actualRevenue + tokenRevenue) * staffRevMult;
       draft.resources['funds'] = (draft.resources['funds'] ?? 0) + totalIncome;
-      draft.operations.dailyRevenue = actualRevenue;
+      draft.operations.dailyRevenue = actualRevenue * staffRevMult;
       draft.operations.tokenRevenue = tokenRevenue;
+
+      // ★ 收入影响员工士气
+      const prevRevenue = current.operations?.dailyRevenue ?? draft.operations.dailyRevenue;
+      const moraleImpact = calcMoraleImpactFromOperations(draft.operations.dailyRevenue, prevRevenue);
+      if (moraleImpact !== 0) {
+        draft.riskState.employeeMorale = clamp(draft.riskState.employeeMorale + moraleImpact, 0, 100);
+      }
+
       draft.operations.userChurnRate = churnRate;
       draft.operations.markets = regionBreakdown.map((r) => ({
         regionId: r.regionId,

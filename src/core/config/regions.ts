@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 地区系统配置
  *
  * 世界分为 33 个地区，每个地区有独立的人口、经济、语言、监管环境等属性。
@@ -877,4 +877,28 @@ export function getRegionsByContinent(): Record<string, Region[]> {
     (groups[r.continent] ??= []).push(r);
   }
   return groups;
+}
+
+// ============================================================
+// 电网与算力租赁（基于地区指数的派生值）
+// ============================================================
+
+/**
+ * 获取地区电网购电单价（$/kW 一次性购电费）
+ * energyCostIndex 越低越便宜：
+ *   index=8  (非洲) → ~$528/kW
+ *   index=45 (美西) → ~$1,120/kW
+ *   index=85 (日本) → ~$1,760/kW
+ */
+export function getGridPowerPrice(region: Region): number {
+  return Math.round(400 + (region.energyCostIndex / 100) * 1600);
+}
+
+/**
+ * 获取地区电网可购电上限（kW）
+ * 发达地区电网容量更大
+ */
+export function getGridPowerCap(region: Region): number {
+  const devFactor = region.internetPenetration / 100;
+  return Math.round(region.population * 30 * devFactor);
 }

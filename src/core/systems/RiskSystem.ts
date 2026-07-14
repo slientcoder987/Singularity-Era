@@ -8,6 +8,7 @@ import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { checkDailyRisks, calcTrainingCrashProbability } from '../utils/riskUtils';
 import type { CapabilityId } from '../config/capabilities';
+import { getStaffLegalRiskReductionPerDay } from '../utils/crossSystemUtils';
 
 export class RiskSystem implements System {
   name = 'RiskSystem';
@@ -82,6 +83,13 @@ export class RiskSystem implements System {
           });
 
           emittedEvents.push({ name: evt.name, effects: evt.effects, id: evt.id, severity: evt.severity });
+        }
+
+        // ★ 法务公关每日降低法律和信任风险
+        const legalReduction = getStaffLegalRiskReductionPerDay(draft);
+        if (legalReduction > 0) {
+          draft.riskState.legalDebt = Math.max(0, draft.riskState.legalDebt - legalReduction * deltaDays);
+          draft.riskState.trustDebt = Math.max(0, draft.riskState.trustDebt - legalReduction * 0.5 * deltaDays);
         }
       });
 

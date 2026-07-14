@@ -27,6 +27,24 @@ export class FireEmployeeCommand implements Command {
     const wasLoyal = emp.loyalty > 60;
 
     state.update((draft) => {
+      // 从部门成员列表中移除
+      if (emp.departmentId) {
+        const dept = draft.departments.find((d) => d.id === emp.departmentId);
+        if (dept) {
+          dept.memberIds = dept.memberIds.filter((id) => id !== this.employeeId);
+          // 若是部门负责人，需清空
+          if (dept.headId === this.employeeId) {
+            dept.headId = null;
+          }
+        }
+      }
+      // 取消培训关联
+      if (emp.trainingId) {
+        const training = draft.staffTrainings.find((t) => t.id === emp.trainingId);
+        if (training && training.status === 'in_progress') {
+          training.status = 'cancelled';
+        }
+      }
       draft.employees = draft.employees.filter((e) => e.id !== this.employeeId);
     });
 

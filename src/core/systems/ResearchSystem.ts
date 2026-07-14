@@ -10,6 +10,7 @@ import type { System } from '../interfaces/System';
 import { runExperiment } from '../utils/researchUtils';
 import { generateArchMatrix } from '../config/archEffects';
 import { EXPERIMENT_VALIDATION } from '../config/researchConfig';
+import { getStaffResearchSpeedMultiplier, accumulateResearcherContribution } from '../utils/crossSystemUtils';
 
 export class ResearchSystem implements System {
   name = 'ResearchSystem';
@@ -34,8 +35,13 @@ export class ResearchSystem implements System {
             : EXPERIMENT_VALIDATION.mediumDailyProgress;
           // 技术效果加速实验进度
           const dailyProgress = baseProgress * (1 + researchSpeedBonus);
-          project.progress += dailyProgress * deltaDays;
+          // 研究员效率加速
+          const staffSpeedMult = getStaffResearchSpeedMultiplier(draft);
+          project.progress += dailyProgress * deltaDays * staffSpeedMult;
           project.computeUsed = project.computeBudget * project.progress;
+
+          // 累积研究员贡献
+          accumulateResearcherContribution(draft, project.researcherIds, dailyProgress);
 
           if (project.progress >= 1) {
             project.progress = 1;

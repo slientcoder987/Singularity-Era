@@ -569,6 +569,62 @@ body {
   border-radius: 4px;
 }
 
+/* ===== 绩效等级标签 ===== */
+.perfGrade {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+}
+
+/* ===== 股权徽章 ===== */
+.equityBadge {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #ffb454;
+  padding: 1px 6px;
+  border: 1px solid #ffb454;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* ===== 部门卡片 ===== */
+.deptCard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.2s;
+}
+.deptCard:hover {
+  border-color: var(--border-strong);
+}
+
+/* ===== 状态导出 ===== */
+.stateDump {
+  max-height: 480px;
+  overflow: auto;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* ===== 页脚 ===== */
 .footer {
   padding: 14px 28px;

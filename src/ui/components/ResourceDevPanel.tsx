@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
-import { AddResourceCommand } from '../../core/commands/AddResourceCommand';
 import { PurchaseHardwareCommand } from '../../core/commands/PurchaseHardwareCommand';
 import { BuildPowerPlantCommand } from '../../core/commands/BuildPowerPlantCommand';
+import { BuyGridPowerCommand } from '../../core/commands/GridPowerCommand';
+import { RentCloudComputeCommand } from '../../core/commands/RentComputeCommand';
 import {
   COMPUTE_CARD_SPECS,
   getCardSpec,
@@ -20,6 +21,15 @@ import {
   NORMAL_EMPLOYEE_SALARY,
 } from '../../core/config/employees';
 import { StaffRole } from '../../core/entities/Employee';
+import { REGIONS, getGridPowerPrice, getGridPowerCap } from '../../core/config/regions';
+import {
+  CLOUD_PROVIDERS,
+  calcCloudRentalPrice,
+  calcCloudMaxTFLOPS,
+  CLOUD_PROVIDER_MAP,
+  type CloudProviderId,
+} from '../../core/config/cloudProviders';
+import type { CloudRentalContract } from '../../core/commands/RentComputeCommand';
 import { formatCurrency, formatResourceValue } from '../../core/utils';
 import styles from '../styles/App.module.css';
 
@@ -89,7 +99,6 @@ function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
   const employees = useGameState((s) => s.employees);
   const resourceMeta = useGameState((s) => s.resourceMeta);
   const resources = useGameState((s) => s.resources);
-  const [fundAmount, setFundAmount] = useState(100_000);
 
   // ===== 每日支出 =====
   // 1. 核心员工日薪
@@ -167,31 +176,6 @@ function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
           {netDaily >= 0 ? '+' : ''}{formatCurrency(netDaily)}/天
         </span>
       </div>
-
-      <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>资金调整</span>
-        <input
-          className={styles.input}
-          type="number"
-          value={fundAmount}
-          onChange={(e) => setFundAmount(Number(e.target.value) || 0)}
-          style={{ width: '100px' }}
-        />
-        <button
-          className={styles.btn}
-          disabled={fundAmount <= 0}
-          onClick={() => game.executeCommand(new AddResourceCommand('funds', fundAmount, 'dev: 注入资金'))}
-        >
-          + 增加
-        </button>
-        <button
-          className={styles.btn}
-          disabled={fundAmount <= 0 || funds < fundAmount}
-          onClick={() => game.executeCommand(new AddResourceCommand('funds', -fundAmount, 'dev: 扣除资金'))}
-        >
-          - 减少
-        </button>
-      </div>
     </div>
   );
 }
@@ -202,6 +186,8 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
   const resources = useGameState((s) => s.resources);
   const funds = resources['funds'] ?? 0;
   const computePower = resources['compute_power'] ?? 0;
+  const resourceMeta = useGameState((s) => s.resourceMeta);
+  const hqRegionId = useGameState((s) => s.headquartersRegionId);
   const hardwareDefs = game.registry.getByCategory('hardware');
   const [buyQty, setBuyQty] = useState<Record<string, number>>({});
 
@@ -287,6 +273,9 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
           );
         })
       )}
+
+      {/* 云算力租赁 */}
+      <CloudRentalSection game={game} resources={resources} resourceMeta={resourceMeta} hqRegionId={hqRegionId} />
     </div>
   );
 }
@@ -296,10 +285,19 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
 function PowerTab({ game }: { game: ReturnType<typeof useGame> }) {
   const resources = useGameState((s) => s.resources);
   const resourceMeta = useGameState((s) => s.resourceMeta);
+  const hqRegionId = useGameState((s) => s.headquartersRegionId);
 
   const capacityKW = resources['power_kw'] ?? 0;
   const powerPlants =
     (resourceMeta['power_plants'] as Array<{ capacityKW: number; builtAt: number }>) ?? [];
+  const gridContracts =
+    (resourceMeta['grid_power_contracts'] as Array<{ kw: number; pricePerKW: number; purchasedAt: number }>) ?? [];
+  const gridKW = gridContracts.reduce((s, c) => s + c.kw, 0);
+
+  // 地区信息
+  const region = hqRegionId ? REGIONS.find((r) => r.id === hqRegionId) ?? null : null;
+  const gridPricePerKW = region ? getGridPowerPrice(region) : 800;
+  const gridCapKW = region ? getGridPowerCap(region) : 5000;
 
   // 计算当前耗电
   let consumptionKW = POWER_CONFIG.baseConsumptionKW;
@@ -349,11 +347,12 @@ function PowerTab({ game }: { game: ReturnType<typeof useGame> }) {
 
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>电站</span>
-        <span className={styles.devHint}>{powerPlants.length} 座</span>
+        <span className={styles.devHint}>{powerPlants.length} 座 · 电网供电 {gridKW} kW</span>
       </div>
 
+      {/* 自建电站 */}
+      <h4 className={styles.devRowLabel} style={{ marginTop: 8 }}>自建电站</h4>
       <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>操作</span>
         <button className={styles.btn} onClick={() => game.executeCommand(new BuildPowerPlantCommand(50))}>
           +50 kW 电站
           <span className={styles.devHint}>
@@ -367,7 +366,236 @@ function PowerTab({ game }: { game: ReturnType<typeof useGame> }) {
           </span>
         </button>
       </div>
+
+      {/* 电网买电 */}
+      <h4 className={styles.devRowLabel} style={{ marginTop: 8 }}>电网买电</h4>
+      {region ? (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devHint}>
+              地区: {region.name} · 电价 ${gridPricePerKW.toLocaleString()}/kW · 电网容量 {gridCapKW.toLocaleString()} kW（已购 {gridKW.toLocaleString()}）
+            </span>
+          </div>
+          <div className={styles.devRow}>
+            <button
+              className={styles.btn}
+              onClick={() => game.executeCommand(new BuyGridPowerCommand(100))}
+              disabled={
+                gridKW + 100 > gridCapKW ||
+                (resources['funds'] ?? 0) < 100 * gridPricePerKW
+              }
+            >
+              +100 kW
+              <span className={styles.devHint}>（${(100 * gridPricePerKW).toLocaleString()}）</span>
+            </button>
+            <button
+              className={styles.btn}
+              onClick={() => game.executeCommand(new BuyGridPowerCommand(500))}
+              disabled={
+                gridKW + 500 > gridCapKW ||
+                (resources['funds'] ?? 0) < 500 * gridPricePerKW
+              }
+            >
+              +500 kW
+              <span className={styles.devHint}>（${(500 * gridPricePerKW).toLocaleString()}）</span>
+            </button>
+            <button
+              className={styles.btn}
+              onClick={() => game.executeCommand(new BuyGridPowerCommand(2000))}
+              disabled={
+                gridKW + 2000 > gridCapKW ||
+                (resources['funds'] ?? 0) < 2000 * gridPricePerKW
+              }
+            >
+              +2,000 kW
+              <span className={styles.devHint}>（${(2000 * gridPricePerKW).toLocaleString()}）</span>
+            </button>
+          </div>
+          {/* 自定义购电量 */}
+          <GridPowerCustom game={game} gridKW={gridKW} gridCapKW={gridCapKW} gridPricePerKW={gridPricePerKW} />
+        </>
+      ) : (
+        <div className={styles.emptyHint}>请先选择总部地区</div>
+      )}
     </div>
+  );
+}
+
+/** 自定义电网购电量输入 */
+function GridPowerCustom({
+  game, gridKW, gridCapKW, gridPricePerKW,
+}: {
+  game: ReturnType<typeof useGame>;
+  gridKW: number;
+  gridCapKW: number;
+  gridPricePerKW: number;
+}) {
+  const funds = useGameState((s) => s.resources['funds'] ?? 0);
+  const [amount, setAmount] = useState(1000);
+
+  const remaining = gridCapKW - gridKW;
+  const cost = amount * gridPricePerKW;
+  const canBuy = amount > 0 && amount <= remaining && funds >= cost;
+
+  return (
+    <div className={styles.devRow}>
+      <input
+        className={styles.input}
+        type="number"
+        min={1}
+        max={remaining}
+        value={amount}
+        onChange={(e) => setAmount(Math.max(1, Math.min(remaining, Number(e.target.value) || 1)))}
+        style={{ width: '80px' }}
+      />
+      <span className={styles.devHint}>kW · ${(cost).toLocaleString()}</span>
+      <button
+        className={styles.btn}
+        disabled={!canBuy}
+        onClick={() => game.executeCommand(new BuyGridPowerCommand(amount))}
+      >
+        买电
+      </button>
+    </div>
+  );
+}
+
+/* ============== 云算力租赁 ============== */
+
+function CloudRentalSection({
+  game, resources, resourceMeta, hqRegionId,
+}: {
+  game: ReturnType<typeof useGame>;
+  resources: Record<string, number>;
+  resourceMeta: Record<string, any>;
+  hqRegionId: string | null;
+}) {
+  const date = useGameState((s) => s.date);
+  const region = hqRegionId ? REGIONS.find((r) => r.id === hqRegionId) ?? null : null;
+  const contracts = (resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
+  const activeContracts = contracts.filter((c) => date < c.expiresAt);
+  const rentedTFLOPS = activeContracts.reduce((s, c) => s + c.tflops, 0);
+
+  const [selectedProvider, setSelectedProvider] = useState<CloudProviderId>('nimbus');
+  const [rentUnits, setRentUnits] = useState(5);
+  const [rentDays, setRentDays] = useState(30);
+
+  const provider = CLOUD_PROVIDER_MAP[selectedProvider];
+  const tflops = rentUnits * (provider?.unitTFLOPS ?? 100);
+  const dailyPrice = region && provider ? calcCloudRentalPrice(provider, region) : 0;
+  const totalCost = Math.round(dailyPrice * tflops * rentDays);
+  const maxTFLOPS = region && provider ? calcCloudMaxTFLOPS(provider, region) : 0;
+  const existingTFLOPS = activeContracts
+    .filter((c) => c.providerId === selectedProvider && c.regionId === hqRegionId)
+    .reduce((s, c) => s + c.tflops, 0);
+  const canRent = tflops > 0
+    && existingTFLOPS + tflops <= maxTFLOPS
+    && rentDays >= (provider?.minRentalDays ?? 7)
+    && rentDays <= (provider?.maxRentalDays ?? 365)
+    && (resources['funds'] ?? 0) >= totalCost;
+
+  return (
+    <>
+      <h4 className={styles.devRowLabel} style={{ marginTop: 12 }}>云算力租赁</h4>
+      {region ? (
+        <>
+          {/* 进行中的合约 */}
+          {activeContracts.length > 0 && (
+            <>
+              <div className={styles.devRow}>
+                <span className={styles.devRowLabel}>进行中的合约</span>
+                <span className={styles.devHint}>共 {rentedTFLOPS.toLocaleString()} TFLOPS</span>
+              </div>
+              {activeContracts.map((c) => {
+                const prov = CLOUD_PROVIDER_MAP[c.providerId];
+                const remaining = Math.max(0, c.expiresAt - date);
+                return (
+                  <div key={c.id} className={styles.devRow}>
+                    <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                      · {prov?.name ?? c.providerId}
+                    </span>
+                    <span className={styles.devHint}>
+                      {c.tflops} TFLOPS · ${c.dailyCost}/天 · 剩余 {Math.ceil(remaining)} 天
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* 新建租赁 */}
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>服务商</span>
+            <select
+              className={styles.select}
+              value={selectedProvider}
+              onChange={(e) => setSelectedProvider(e.target.value as CloudProviderId)}
+            >
+              {CLOUD_PROVIDERS.map((p) => {
+                const price = region ? calcCloudRentalPrice(p, region) : 0;
+                const cap = region ? calcCloudMaxTFLOPS(p, region) : 0;
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — ${price}/TFLOPS·天 · 上限 {cap.toLocaleString()} TFLOPS
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {provider && (
+            <div className={styles.devRow}>
+              <span className={styles.devHint}>
+                {provider.description} · 单位 {provider.unitTFLOPS} TFLOPS · {provider.minRentalDays}-{provider.maxRentalDays} 天
+              </span>
+            </div>
+          )}
+
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>数量</span>
+            <input
+              className={styles.input}
+              type="number"
+              min={1}
+              value={rentUnits}
+              onChange={(e) => setRentUnits(Math.max(1, Number(e.target.value) || 1))}
+              style={{ width: '60px' }}
+            />
+            <span className={styles.devHint}>
+              单位（= {tflops.toLocaleString()} TFLOPS）· 已租 {existingTFLOPS} / 上限 {maxTFLOPS} TFLOPS
+            </span>
+          </div>
+
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>天数</span>
+            <input
+              className={styles.input}
+              type="number"
+              min={provider.minRentalDays}
+              max={provider.maxRentalDays}
+              value={rentDays}
+              onChange={(e) => setRentDays(Math.max(1, Number(e.target.value) || 1))}
+              style={{ width: '60px' }}
+            />
+            <span className={styles.devHint}>
+              天 · ${dailyPrice}/TFLOPS·天 · 合计 ${totalCost.toLocaleString()}
+            </span>
+          </div>
+
+          <div className={styles.devRow}>
+            <button
+              className={styles.btn}
+              disabled={!canRent}
+              onClick={() => game.executeCommand(new RentCloudComputeCommand(selectedProvider, tflops, rentDays))}
+            >
+              租用 {tflops} TFLOPS · {rentDays} 天
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className={styles.emptyHint}>请先选择总部地区</div>
+      )}
+    </>
   );
 }
 

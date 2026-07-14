@@ -174,6 +174,22 @@ export class SetHeadquartersCommand implements Command {
 
       draft.resources['staff_researcher'] = 3;
       draft.resources['staff_data_engineer'] = 2;
+
+      // 自动将初始员工加入对应部门
+      const researchDept = draft.departments.find((d) => d.type === 'research');
+      const dataDept = draft.departments.find((d) => d.type === 'data');
+      if (researchDept) {
+        researchDept.memberIds = ['emp-res-1', 'emp-res-2', 'emp-res-3'];
+        for (const emp of draft.employees) {
+          if (emp.role === StaffRole.RESEARCHER) emp.departmentId = researchDept.id;
+        }
+      }
+      if (dataDept) {
+        dataDept.memberIds = ['emp-de-1', 'emp-de-2'];
+        for (const emp of draft.employees) {
+          if (emp.role === StaffRole.DATA_ENGINEER) emp.departmentId = dataDept.id;
+        }
+      }
     });
 
     events.emit('HEADQUARTERS_SET', this.regionId, region.name);

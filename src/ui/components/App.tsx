@@ -8,6 +8,7 @@ import { InfrastructurePanel } from './InfrastructurePanel';
 import { ModelPanel } from './ModelPanel';
 import { ResearchPanel } from './ResearchPanel';
 import { BusinessPanel } from './BusinessPanel';
+import { SettingsPanel } from './SettingsPanel';
 import { StartupScreen } from './StartupScreen';
 import styles from '../styles/App.module.css';
 
@@ -64,6 +65,12 @@ export function App() {
       {activeView === 'business' && (
         <main className={styles.pageMain}>
           <BusinessPanel />
+        </main>
+      )}
+
+      {activeView === 'settings' && (
+        <main className={styles.pageMain}>
+          <SettingsPanel />
         </main>
       )}
 

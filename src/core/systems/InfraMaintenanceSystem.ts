@@ -3,6 +3,7 @@ import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { getCardSpec } from '../config/computeCards';
 import { calcActualPowerDraw, type WorkloadType } from '../utils/computeUtilization';
+import { getRegionModifiers } from './RegionSystem';
 
 /**
  * InfraMaintenanceSystem
@@ -99,8 +100,9 @@ export class InfraMaintenanceSystem implements System {
       const totalPowerKW = trainingPowerKW + idlePowerKW;
       const actualPowerMW = totalPowerKW / 1000;
 
-      // 电力成本 = 功耗(kW) × currentPue × 24h × 电价(/kWh) × deltaDays
-      const dailyPowerCost = totalPowerKW * effectivePue * 24 * dc.powerCostPerKWh * deltaDays;
+      // 电力成本 = 功耗(kW) × currentPue × 24h × 电价(/kWh) × regionEnergyModifier × deltaDays
+      const regionMods = getRegionModifiers(current.headquartersRegionId);
+      const dailyPowerCost = totalPowerKW * effectivePue * 24 * dc.powerCostPerKWh * regionMods.energyMultiplier * deltaDays;
       totalDcPowerCost += dailyPowerCost;
 
       // 过载检测

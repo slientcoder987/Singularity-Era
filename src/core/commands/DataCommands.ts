@@ -9,7 +9,8 @@ import { CAPABILITIES } from '../config/capabilities';
 import { RESEARCH_CONFIG } from '../config/researchConfig';
 import { StaffRole } from '../entities/Employee';
 import { ROLE_TO_STAFF_RESOURCE } from '../config/employees';
-import type { DataDomainId } from '../entities/Dataset';
+import type { DataDomainId, Dataset, DataDomain } from '../entities/Dataset';
+import { INITIAL_DATA_DOMAINS } from '../config/datasets';
 import type { DataCollectionProject } from '../entities/DataCollectionProject';
 
 /** 生成唯一 id */
@@ -413,5 +414,84 @@ export class StopDataCollectionCommand implements Command {
     });
 
     events.emit('DATA_COLLECTION_STOPPED', { projectId: this.projectId });
+  }
+}
+
+/**
+ * 创建新数据集（空数据集，玩家可自行收集/购买数据填充）
+ */
+export class CreateDatasetCommand implements Command {
+  constructor(private readonly name: string) {}
+
+  execute(state: GameState, events: EventBus): void {
+    const name = this.name.trim();
+    if (!name) {
+      events.emit('DATASET_CREATE_REJECTED', { reason: '数据集名称不能为空' });
+      return;
+    }
+
+    const current = state.read();
+    if (current.datasets.some((d) => d.name === name)) {
+      events.emit('DATASET_CREATE_REJECTED', { reason: '数据集名称已存在' });
+      return;
+    }
+
+    // 创建空数据集（所有领域初始为 0）
+    const domains = {} as Record<DataDomainId, DataDomain>;
+    (Object.keys(INITIAL_DATA_DOMAINS) as DataDomainId[]).forEach((id) => {
+      domains[id] = { id, tokens: 0, quality: 0, freshness: 0, duplication: 0 };
+    });
+
+    const dataset: Dataset = {
+      id: genId('dataset'),
+      name,
+      domains,
+      totalTokens: 0,
+      effectiveTokens: 0,
+      contamination: 0,
+      legality: 1.0,
+      createdAt: current.date,
+    };
+
+    state.update((draft) => {
+      draft.datasets.push(dataset);
+    });
+
+    events.emit('DATASET_CREATED', { id: dataset.id, name });
+  }
+}
+
+/**
+ * 删除数据集（初始数据集不可删除）
+ */
+export class DeleteDatasetCommand implements Command {
+  constructor(private readonly datasetId: string) {}
+
+  execute(state: GameState, events: EventBus): void {
+    const current = state.read();
+    const dataset = current.datasets.find((d) => d.id === this.datasetId);
+    if (!dataset) {
+      events.emit('DATASET_DELETE_REJECTED', { reason: '数据集不存在' });
+      return;
+    }
+    if (dataset.id === 'dataset-initial') {
+      events.emit('DATASET_DELETE_REJECTED', { reason: '初始数据集不可删除' });
+      return;
+    }
+
+    // 检查是否有进行中的收集项目引用此数据集
+    const hasActiveCollection = current.dataCollectionProjects.some(
+      (p) => p.targetDatasetId === this.datasetId && p.status === 'active',
+    );
+    if (hasActiveCollection) {
+      events.emit('DATASET_DELETE_REJECTED', { reason: '有进行中的收集项目引用此数据集' });
+      return;
+    }
+
+    state.update((draft) => {
+      draft.datasets = draft.datasets.filter((d) => d.id !== this.datasetId);
+    });
+
+    events.emit('DATASET_DELETED', { id: this.datasetId });
   }
 }

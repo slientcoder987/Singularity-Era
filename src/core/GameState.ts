@@ -1,7 +1,7 @@
 import { produce } from 'immer';
 import { clamp } from './utils';
 import type { ResourceDefinition } from './resources/ResourceTypes';
-import type { Employee } from './entities/Employee';
+import type { Employee, StaffAttributes } from './entities/Employee';
 import type { ServerNode, Cluster, DataCenter, TechEffect } from './entities/Infrastructure';
 import type { TrainingProject } from './entities/TrainingProject';
 import type { Model } from './entities/Model';
@@ -12,6 +12,8 @@ import type { DataCollectionProject } from './entities/DataCollectionProject';
 import type { RegionId } from './config/regions';
 import type { FundingRound, BoardMission } from './entities/Operations';
 import type { CompetitorState, ExternalCorp } from './entities/Competitor';
+import type { Department } from './entities/Department';
+import type { StaffTrainingProject } from './entities/StaffTrainingProject';
 
 /**
  * 硬件采购订单
@@ -153,6 +155,18 @@ export interface GameData {
   competitorStates: CompetitorState[];
   /** 外部可渗透企业 */
   externalCorps: ExternalCorp[];
+
+  // ===== 员工系统扩展 =====
+  /** 部门列表（固定 5 个） */
+  departments: Department[];
+  /** 员工培训项目列表 */
+  staffTrainings: StaffTrainingProject[];
+  /** 待选候选人列表（招聘后生成） */
+  pendingCandidates: Candidate[];
+  /** 上次团建日（用于冷却） */
+  lastTeamBuildingDay: number;
+  /** 上次绩效评估日 */
+  lastPerformanceEvalDay: number;
 }
 
 /** 基础设施事件日志条目 */
@@ -161,6 +175,23 @@ export interface InfraEventEntry {
   type: string;
   message: string;
   severity: 'info' | 'warning' | 'critical';
+}
+
+/** 招聘候选人 */
+export interface Candidate {
+  id: string;
+  name: string;
+  role: import('./entities/Employee').StaffRole;
+  attributes: StaffAttributes;
+  level: number;
+  /** 招聘渠道 */
+  channel: import('./config/employees').RecruitmentChannelId;
+  /** 生成的预期薪资 */
+  expectedSalary: number;
+  /** 候选人生成日 */
+  generatedDay: number;
+  /** 是否已被录用或拒绝 */
+  status: 'pending' | 'hired' | 'rejected';
 }
 
 /** 状态变更监听器 */

@@ -82,6 +82,31 @@ export class CompetitorSystem implements System {
       this.simulateCompetitor(comp, current.date, events);
     }
 
+    // ★ 检测玩家模型发布 → 竞争对手加速训练
+    const playerBestCap = current.models.length > 0
+      ? Math.max(...current.models.map((m) => m.baseScore))
+      : 0;
+    for (const comp of this.competitors) {
+      const compBestCap = Math.max(...Object.values(comp.capabilities));
+      // 玩家领先显著 → 竞争对手加快训练
+      if (playerBestCap > compBestCap * 1.2) {
+        comp.trainingProgress = Math.min(100, comp.trainingProgress + 3);
+        if (comp.infiltrationLevel > 0) {
+          const intel: CompetitorIntel = {
+            id: `intel-${comp.id}-${current.date}-push`,
+            competitorId: comp.id,
+            type: 'training',
+            title: `${comp.name} 加速训练`,
+            description: `为追赶玩家模型表现，加大训练投入`,
+            day: current.date,
+            severity: 'warning',
+          };
+          comp.intel.push(intel);
+          events.emit('COMPETITOR_INTEL', intel);
+        }
+      }
+    }
+
     // 偶尔触发合并
     if (Math.random() < 0.05 && this.competitors.length >= 2) {
       this.triggerMerger(events);

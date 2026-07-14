@@ -24,6 +24,15 @@ export class AssignEmployeeCommand implements Command {
       return;
     }
 
+    // 培训中员工不可分配
+    if (emp.status === 'training' && this.projectId !== null) {
+      events.emit('ASSIGN_FAILED', {
+        employeeId: this.employeeId,
+        reason: '员工正在培训中，无法分配到项目',
+      });
+      return;
+    }
+
     state.update((draft) => {
       const target = draft.employees.find((e) => e.id === this.employeeId);
       if (!target) return;

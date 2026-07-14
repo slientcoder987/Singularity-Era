@@ -4,6 +4,7 @@ import type { System } from '../interfaces/System';
 import type { ResourceRegistry } from '../resources/ResourceRegistry';
 import { COMPUTE_CARD_SPECS } from '../config/computeCards';
 import type { ComputeCardSpec } from '../entities/ComputeCard';
+import type { CloudRentalContract } from '../commands/RentComputeCommand';
 
 /**
  * ComputeHardwareSystem
@@ -80,6 +81,28 @@ export class ComputeHardwareSystem implements System {
 
     // 注意：计算卡磨损与故障由 InfrastructureFailureSystem 统一处理，
     // 避免双重故障计数。
+
+    // 3. 处理云算力租赁合约到期
+    const cloudContracts = (current.resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
+    const expiredContracts = cloudContracts.filter((c) => c.expiresAt <= today);
+    if (expiredContracts.length > 0) {
+      let tfopsReleased = 0;
+      for (const contract of expiredContracts) {
+        tfopsReleased += contract.tflops;
+      }
+      state.update((draft) => {
+        draft.resources['compute_power'] = Math.max(0, (draft.resources['compute_power'] ?? 0) - tfopsReleased);
+        const activeContracts = (draft.resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
+        draft.resourceMeta['cloud_rental_contracts'] = activeContracts.filter((c) => c.expiresAt > today);
+      });
+      for (const contract of expiredContracts) {
+        events.emit('CLOUD_RENTAL_EXPIRED', {
+          providerId: contract.providerId,
+          tflops: contract.tflops,
+          contractId: contract.id,
+        });
+      }
+    }
   }
 
   /** 获取某型号当前可用的（在线未分配）卡实例列表 */

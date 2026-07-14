@@ -19,6 +19,7 @@ import { CompetitorSystem } from './core/systems/CompetitorSystem';
 import { INITIAL_RESOURCES } from './core/config/resources';
 import { createInitialDataset } from './core/config/datasets';
 import { EXTERNAL_CORPS } from './core/entities/Competitor';
+import { DEPARTMENT_ROLE_MAP, DEPARTMENT_NAMES } from './core/entities/Department';
 import { GameProvider } from './ui/context/GameContext';
 import { App } from './ui/components/App';
 
@@ -32,6 +33,20 @@ function buildInitialResources(): Record<string, number> {
     map[def.id] = def.initialValue;
   }
   return map;
+}
+
+/** 创建 5 个初始部门 */
+function buildInitialDepartments() {
+  return (Object.keys(DEPARTMENT_NAMES) as Array<keyof typeof DEPARTMENT_NAMES>).map((type) => ({
+    id: `dept-${type}`,
+    type,
+    name: DEPARTMENT_NAMES[type],
+    role: DEPARTMENT_ROLE_MAP[type],
+    headId: null,
+    memberIds: [],
+    normalHeadcount: 0,
+    budget: 0,
+  }));
 }
 
 const initialData: GameData = {
@@ -77,6 +92,12 @@ const initialData: GameData = {
   operations: null,
   competitorStates: [],
   externalCorps: [...EXTERNAL_CORPS],
+  // 员工系统扩展
+  departments: buildInitialDepartments(),
+  staffTrainings: [],
+  pendingCandidates: [],
+  lastTeamBuildingDay: -999,
+  lastPerformanceEvalDay: 0,
 };
 
 // 1. 先创建 registry 并注册资源

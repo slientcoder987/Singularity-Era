@@ -173,3 +173,165 @@ export const ROLE_TO_STAFF_RESOURCE: Record<StaffRole, string> = {
   [StaffRole.PRODUCT_MANAGER]: 'staff_product_manager',
   [StaffRole.LEGAL_PR]: 'staff_legal_pr',
 };
+
+// ============================================================
+// 招聘渠道
+// ============================================================
+
+/** 招聘渠道 id */
+export type RecruitmentChannelId = 'campus' | 'job_site' | 'headhunter' | 'internal_promote';
+
+/** 招聘渠道配置 */
+export interface RecruitmentChannelConfig {
+  id: RecruitmentChannelId;
+  name: string;
+  /** 一次性招聘费（美元） */
+  cost: number;
+  /** 交付天数（候选人出现所需时间） */
+  deliveryDays: number;
+  /** 候选人属性均值（50-100） */
+  baseAttribute: number;
+  /** 候选人等级范围 [min, max] */
+  levelRange: [number, number];
+  /** 生成的候选人数 */
+  candidateCount: number;
+}
+
+/** 招聘渠道表 */
+export const RECRUITMENT_CHANNELS: Record<RecruitmentChannelId, RecruitmentChannelConfig> = {
+  campus: {
+    id: 'campus',
+    name: '校园招聘',
+    cost: 5_000,
+    deliveryDays: 14,
+    baseAttribute: 55,
+    levelRange: [1, 2],
+    candidateCount: 3,
+  },
+  job_site: {
+    id: 'job_site',
+    name: '招聘网站',
+    cost: 10_000,
+    deliveryDays: 3,
+    baseAttribute: 65,
+    levelRange: [2, 4],
+    candidateCount: 3,
+  },
+  headhunter: {
+    id: 'headhunter',
+    name: '猎头',
+    cost: 50_000,
+    deliveryDays: 7,
+    baseAttribute: 80,
+    levelRange: [4, 7],
+    candidateCount: 3,
+  },
+  internal_promote: {
+    id: 'internal_promote',
+    name: '内部晋升',
+    cost: 0,
+    deliveryDays: 0,
+    baseAttribute: 0, // 内部晋升使用员工原属性
+    levelRange: [1, 10],
+    candidateCount: 0, // 内部晋升不生成候选人
+  },
+};
+
+// ============================================================
+// 等级倍率与角色主属性
+// ============================================================
+
+/** 等级 → 年薪倍率 */
+export function levelMultiplier(level: number): number {
+  if (level <= 2) return 1.0;
+  if (level <= 4) return 1.3;
+  if (level <= 6) return 1.7;
+  if (level <= 8) return 2.2;
+  return 3.0;
+}
+
+/** 角色 → 主属性映射（用于效率计算） */
+export const ROLE_PRIMARY_ATTR: Record<StaffRole, keyof import('../entities/Employee').StaffAttributes> = {
+  [StaffRole.RESEARCHER]: 'intelligence',
+  [StaffRole.DATA_ENGINEER]: 'intelligence',
+  [StaffRole.SYSTEM_ENGINEER]: 'intelligence',
+  [StaffRole.PRODUCT_MANAGER]: 'leadership',
+  [StaffRole.LEGAL_PR]: 'charisma',
+};
+
+// ============================================================
+// 激励手段配置
+// ============================================================
+
+/** 奖金冷却天数 */
+export const BONUS_COOLDOWN_DAYS = 30;
+/** 奖金金额占年薪比例 */
+export const BONUS_SALARY_RATIO = 0.1;
+/** 奖金忠诚度提升 */
+export const BONUS_LOYALTY_GAIN = 15;
+
+/** 股权冷却天数 */
+export const EQUITY_COOLDOWN_DAYS = 90;
+/** 股权忠诚度提升 */
+export const EQUITY_LOYALTY_GAIN = 30;
+/** 股权锁定期（天，2 年 = 730 天） */
+export const EQUITY_LOCK_DAYS = 730;
+
+/** 团建成本（美元/人） */
+export const TEAM_BUILDING_COST_PER_HEAD = 10_000;
+/** 团建冷却天数 */
+export const TEAM_BUILDING_COOLDOWN_DAYS = 30;
+/** 团建忠诚度提升 */
+export const TEAM_BUILDING_LOYALTY_GAIN = 5;
+/** 团建疲劳度降低 */
+export const TEAM_BUILDING_FATIGUE_REDUCE = 20;
+
+// ============================================================
+// 晋升配置
+// ============================================================
+
+/** 主动晋升所需经验阈值比例（达到本级阈值的 80%） */
+export const PROMOTE_EXP_RATIO = 0.8;
+/** 主动晋升所需最低绩效等级 */
+export const PROMOTE_MIN_GRADE: 'S' | 'A' | 'B' | 'C' = 'A';
+/** 主动晋升冷却天数 */
+export const PROMOTE_COOLDOWN_DAYS = 90;
+/** 主动晋升奖励技能点 */
+export const PROMOTE_SKILL_POINT_GAIN = 2;
+
+// ============================================================
+// 普通员工招聘递增
+// ============================================================
+
+/** 普通员工招聘费递增起点 */
+export const NORMAL_HIRE_TIER_THRESHOLD = 50;
+/** 每超 1 人递增比例 */
+export const NORMAL_HIRE_TIER_INCREMENT = 0.05;
+
+/** 计算普通员工实际招聘费 */
+export function calcNormalHireCost(currentCount: number): number {
+  const extra = Math.max(0, currentCount - NORMAL_HIRE_TIER_THRESHOLD);
+  return Math.round(NORMAL_HIRE_COST * (1 + extra * NORMAL_HIRE_TIER_INCREMENT));
+}
+
+// ============================================================
+// 绩效评估配置
+// ============================================================
+
+/** 绩效评估周期（天） */
+export const PERFORMANCE_EVAL_PERIOD = 30;
+
+/** 绩效等级阈值 */
+export const PERFORMANCE_GRADE_THRESHOLDS = {
+  S: 85,
+  A: 70,
+  B: 50,
+  // C: < 50
+};
+
+/** 绩效奖励：S 级技能点 */
+export const PERFORMANCE_S_SKILL_POINT = 1;
+/** 绩效奖励：A 级经验倍率 */
+export const PERFORMANCE_A_EXP_MULTIPLIER = 1.5;
+/** 绩效惩罚：C 级忠诚度扣减 */
+export const PERFORMANCE_C_LOYALTY_PENALTY = 5;

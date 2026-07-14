@@ -7,6 +7,8 @@ import {
   SynthesizeDataCommand,
   StartDataCollectionCommand,
   StopDataCollectionCommand,
+  CreateDatasetCommand,
+  DeleteDatasetCommand,
 } from '../../core/commands/DataCommands';
 import { ALL_TECH } from '../../core/config/techTree';
 import { CAPABILITIES } from '../../core/config/capabilities';
@@ -545,10 +547,11 @@ function DataTab() {
   const normalDataEngineers = useGameState((s) => s.resources[ROLE_TO_STAFF_RESOURCE[StaffRole.DATA_ENGINEER]] ?? 0);
   const collectionProjects = useGameState((s) => s.dataCollectionProjects);
 
-  const [selectedDatasetId] = useState<string>(datasets[0]?.id ?? '');
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string>(datasets[0]?.id ?? '');
   const [synthModelId, setSynthModelId] = useState<string>('');
   const [synthDomain, setSynthDomain] = useState<string>('code');
   const [synthAmount, setSynthAmount] = useState<number>(5);
+  const [newDatasetName, setNewDatasetName] = useState<string>('');
 
   // 新建收集任务状态
   const [selectedRoute, setSelectedRoute] = useState<string>(COLLECTION_ROUTES[0].id);
@@ -589,9 +592,61 @@ function DataTab() {
 
   return (
     <div className={styles.tabBody}>
+      {/* 数据集选择与管理 */}
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>数据集</span>
+        <select
+          className={styles.select}
+          value={selectedDatasetId}
+          onChange={(e) => setSelectedDatasetId(e.target.value)}
+        >
+          {datasets.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name} ({d.totalTokens.toFixed(0)}B tokens · 有效{d.effectiveTokens.toFixed(0)}B)
+            </option>
+          ))}
+        </select>
+        {dataset && dataset.id !== 'dataset-initial' && (
+          <button
+            className={`${styles.btn} ${styles.btnSm} ${styles.btnWarn}`}
+            onClick={() => game.executeCommand(new DeleteDatasetCommand(dataset.id))}
+          >
+            删除
+          </button>
+        )}
+      </div>
+
+      {/* 新建数据集 */}
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>新建数据集</span>
+        <input
+          className={styles.input}
+          value={newDatasetName}
+          onChange={(e) => setNewDatasetName(e.target.value)}
+          placeholder="输入数据集名称"
+          style={{ width: '180px' }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && newDatasetName.trim()) {
+              game.executeCommand(new CreateDatasetCommand(newDatasetName));
+              setNewDatasetName('');
+            }
+          }}
+        />
+        <button
+          className={styles.btn}
+          disabled={!newDatasetName.trim()}
+          onClick={() => {
+            game.executeCommand(new CreateDatasetCommand(newDatasetName));
+            setNewDatasetName('');
+          }}
+        >
+          创建
+        </button>
+      </div>
+
       {/* 数据集概览 */}
       <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>数据集: {dataset?.name ?? '无'}</span>
+        <span className={styles.devRowLabel}>概览: {dataset?.name ?? '无'}</span>
         <span className={styles.devHint}>
           总量 {dataset?.totalTokens.toFixed(0)}B · 有效 {dataset?.effectiveTokens.toFixed(0)}B
         </span>

@@ -16,6 +16,7 @@ import { COLLECTION_MAP, type CollectionRouteId } from '../config/dataAcquisitio
 import { ROLE_TO_STAFF_RESOURCE } from '../config/employees';
 import { StaffRole } from '../entities/Employee';
 import type { DataDomainId } from '../entities/Dataset';
+import { accumulateResearcherContribution } from '../utils/crossSystemUtils';
 
 export class CollectionSystem implements System {
   name = 'CollectionSystem';
@@ -37,6 +38,9 @@ export class CollectionSystem implements System {
         // 每日产量 × deltaDays
         const tokensProduced = project.dailyRate * deltaDays;
         if (tokensProduced <= 0) continue;
+
+        // ★ 数据工程师每日贡献累积
+        accumulateResearcherContribution(draft, project.engineerIds, 1);
 
         // 扣除每日运营成本
         const operatingCost = route.dailyCost * deltaDays;

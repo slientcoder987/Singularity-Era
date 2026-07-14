@@ -17,6 +17,7 @@ import {
   deriveBaseScoreParams,
   calculateCapabilities,
 } from '../utils/capabilityCalc';
+import { getStaffTrainingSpeedMultiplier, getStaffTrainingStabilityBonus, accumulateResearcherContribution } from '../utils/crossSystemUtils';
 
 /** 计算期望损失（基于训练进度 0-1） */
 function calcExpectedLoss(progress: number): number {
@@ -145,7 +146,8 @@ export class TrainingSystem implements System {
         }
 
         // 每日推进 = 有效算力 × 阶段修正 × deltaDays
-        const dailyProgress = result.effectiveTflops * phaseModifier * deltaDays;
+        const staffSpeedMult = getStaffTrainingSpeedMultiplier(draft);
+        const dailyProgress = result.effectiveTflops * phaseModifier * deltaDays * staffSpeedMult;
         project.computeRemaining = Math.max(0, project.computeRemaining - dailyProgress);
 
         // 计算训练进度
@@ -174,8 +176,9 @@ export class TrainingSystem implements System {
         }
 
         // ===== 训练事件判定 =====
-        // 损失尖峰概率
-        const spikeProb = hasGradientClipping ? 0.01 : 0.05;
+        // 损失尖峰概率（研究员稳定度可降低）
+        const stabilityBonus = getStaffTrainingStabilityBonus(draft);
+        const spikeProb = hasGradientClipping ? 0.01 * (1 - stabilityBonus) : 0.05 * (1 - stabilityBonus);
         if (Math.random() < spikeProb * deltaDays) {
           const spikeMagnitude = 0.5 + Math.random() * 1.5;
           loss += spikeMagnitude;
@@ -317,8 +320,14 @@ export class TrainingSystem implements System {
               noiseSeed: hashStr(`${project.id}-model` + draft.date + Math.random()),
             };
             draft.models.push(model);
+
+            // ★ 模型发布 → 累积贡献 + 竞争对手感知
+            accumulateResearcherContribution(draft, [], 5);
+            events.emit('PLAYER_MODEL_RELEASED', project.modelName, model.baseScore);
           }
         } else {
+          // 每日贡献累积
+          accumulateResearcherContribution(draft, [], 1);
           progressInfo.push({
             id: project.id,
             modelName: project.modelName,
