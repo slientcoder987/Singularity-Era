@@ -1,19 +1,13 @@
-/**
- * CompetitorSystem
- *
- * 每 7 天模拟一次所有竞争对手的决策：
- * - 融资
- * - 训练进度推进
- * - 模型发布
- * - 合并可能
- * - 生成情报
- * - 同步到 GameState 供 UI/市场计算使用
- */
 import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { CompetitorState, CompetitorIntel } from '../entities/Competitor';
 import { COMPETITOR_TEMPLATES } from '../entities/Competitor';
+
+/** 生成唯一 id */
+function genId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 /** 每 X 天执行一次竞争对手模拟 */
 const COMPETITOR_TICK_DAYS = 7;
@@ -93,7 +87,7 @@ export class CompetitorSystem implements System {
         comp.trainingProgress = Math.min(100, comp.trainingProgress + 3);
         if (comp.infiltrationLevel > 0) {
           const intel: CompetitorIntel = {
-            id: `intel-${comp.id}-${current.date}-push`,
+            id: genId(`intel-${comp.id}-${current.date}-push`),
             competitorId: comp.id,
             type: 'training',
             title: `${comp.name} 加速训练`,
@@ -113,7 +107,16 @@ export class CompetitorSystem implements System {
     }
 
     // ★ Bug #1 修复：同步到 GameState，供 UI 和 marketCalc 使用
-    const snapshot = this.competitors.map((c) => ({ ...c, capabilities: { ...c.capabilities }, intel: c.intel.slice(-50) }));
+    // 注意：必须深拷贝所有可变字段（数组、对象），否则 immer 会冻结共享引用，
+    // 导致后续本地 this.competitors 上的 push/赋值操作抛出 "object is not extensible"
+    const snapshot = this.competitors.map((c) => ({
+      ...c,
+      capabilities: { ...c.capabilities },
+      operatingRegions: [...c.operatingRegions],
+      regionQualityMultiplier: { ...c.regionQualityMultiplier },
+      releasedModels: c.releasedModels.map((m) => ({ ...m })),
+      intel: c.intel.map((i) => ({ ...i })),
+    }));
     state.update((draft) => {
       draft.competitorStates = snapshot;
     });
@@ -133,7 +136,7 @@ export class CompetitorSystem implements System {
       comp.funds += amount;
 
       const intel: CompetitorIntel = {
-        id: `intel-${comp.id}-${day}-funding`,
+        id: genId(`intel-${comp.id}-${day}-funding`),
         competitorId: comp.id,
         type: 'funding',
         title: `${comp.name} 获得融资`,
@@ -159,7 +162,7 @@ export class CompetitorSystem implements System {
       comp.funds = Math.max(0, comp.funds - scandal.fundsLoss * progressScale);
 
       const intel: CompetitorIntel = {
-        id: `intel-${comp.id}-${day}-scandal`,
+        id: genId(`intel-${comp.id}-${day}-scandal`),
         competitorId: comp.id,
         type: 'scandal',
         title: `${comp.name}: ${scandal.title}`,

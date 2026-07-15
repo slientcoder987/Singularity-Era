@@ -5,6 +5,7 @@ import type { ResourceRegistry } from '../resources/ResourceRegistry';
 import { COMPUTE_CARD_SPECS } from '../config/computeCards';
 import type { ComputeCardSpec } from '../entities/ComputeCard';
 import { POWER_CONFIG } from '../config/resources';
+import { getRegionModifiers } from './RegionSystem';
 
 /**
  * PowerSystem
@@ -13,12 +14,12 @@ import { POWER_CONFIG } from '../config/resources';
  * 职责：
  * 1. 每日计算总功耗：所有在线硬件卡的功耗总和 + 基础设施耗电。
  * 2. 与电力容量（resources['power_kw']）比较：
- *    - 若功耗 <= 容量：正常供电，从电网购电费用计入 funds。
- *    - 若功耗 > 容量：超出部分按更高惩罚电价扣费，并广播 POWER_SHORTAGE。
- * 3. 电力容量可通过 BuildPowerPlantCommand 增加。
+ *    - 若功耗 <= 容量：正常供电，无额外费用。
+ *    - 若功耗 > 容量：超出部分自动从地区电网购电，按市场电价扣费。
+ *      电价 = 基础电价 × 地区能源成本乘数 × 24h × 超出kW × deltaDays
+ * 3. 电力容量可通过 BuildPowerPlantCommand 增加（自建电站降低电网依赖）。
  *
- * 电价模型：每天按 24 小时计算，1 kW 容量占用费 + 实际耗电费。
- * 简化：仅按实际耗电 kW * 24h * pricePerKWh 计费。
+ * 无硬性停电：超容不再中断运营，而是产生额外电费开支。
  */
 export class PowerSystem implements System {
   name = 'PowerSystem';
@@ -47,24 +48,39 @@ export class PowerSystem implements System {
       totalPowerKW += onlineCount * spec.powerPerCard;
     }
 
-    // 2. 仅发射电力平衡事件，电费由 InfraMaintenanceSystem 统一扣除
-    //    避免双重扣费。
+    // 2. 与电力容量比较
     const capacityKW = current.resources['power_kw'] ?? 0;
-    const shortage = totalPowerKW > capacityKW;
+    const excessKW = Math.max(0, totalPowerKW - capacityKW);
 
+    // 3. 超容部分自动从电网购电
+    if (excessKW > 0) {
+      const regionMods = getRegionModifiers(current.headquartersRegionId);
+      // 市场电价 = 基础电价 × 地区能源乘数
+      const marketPricePerKWh = POWER_CONFIG.pricePerKWh * regionMods.energyMultiplier;
+      // 日费用 = 超出kW × 24h × 电价 × deltaDays
+      const gridCost = excessKW * 24 * marketPricePerKWh * deltaDays;
+
+      state.update((draft) => {
+        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - gridCost;
+      });
+
+      events.emit('GRID_PURCHASE', {
+        consumptionKW: totalPowerKW,
+        capacityKW,
+        excessKW,
+        marketPricePerKWh,
+        dailyCost: gridCost / deltaDays,
+        deltaDays,
+      });
+    }
+
+    // 4. 发射电力平衡事件（供 UI 和其他系统使用）
     events.emit('POWER_BALANCE', {
       consumptionKW: totalPowerKW,
       capacityKW,
-      shortage,
+      shortage: false, // 不再有硬性停电
+      excessKW,
       deltaDays,
     });
-
-    if (shortage) {
-      events.emit('POWER_SHORTAGE', {
-        consumptionKW: totalPowerKW,
-        capacityKW,
-        excessKW: totalPowerKW - capacityKW,
-      });
-    }
   }
 }

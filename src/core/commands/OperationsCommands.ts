@@ -56,7 +56,7 @@ export class RaiseFundingCommand implements Command {
       }
 
       draft.fundingRounds.push({
-        id: `funding-${draft.date}-${this.params.type}`,
+        id: `funding-${draft.date}-${this.params.type}-${Math.random().toString(36).slice(2, 6)}`,
         type: this.params.type,
         investorName: this.params.investorName,
         amount,
@@ -81,8 +81,8 @@ export class RaiseFundingCommand implements Command {
         active: true,
       });
 
-      // 资金到账
-      draft.resources['funds'] = (draft.resources['funds'] ?? 0) + amount;
+      // 资金到账（amount 为 M 单位，需转换为实际美元）
+      draft.resources['funds'] = (draft.resources['funds'] ?? 0) + amount * 1_000_000;
     });
 
     events.emit('FUNDING_COMPLETED', this.params.type, this.params.investorName, amount);

@@ -56,6 +56,9 @@ export class OperationsSystem implements System {
       stockUpdate = { old: ipo.terms.stockPrice, new: newPrice };
     }
 
+    // ★ 捕获前日收入（state.update 之前），避免士气对比使用当天值
+    const prevDailyRevenue = current.operations?.dailyRevenue ?? 0;
+
     state.update((draft) => {
       if (!draft.operations) return;
 
@@ -66,9 +69,8 @@ export class OperationsSystem implements System {
       draft.operations.dailyRevenue = actualRevenue * staffRevMult;
       draft.operations.tokenRevenue = tokenRevenue;
 
-      // ★ 收入影响员工士气
-      const prevRevenue = current.operations?.dailyRevenue ?? draft.operations.dailyRevenue;
-      const moraleImpact = calcMoraleImpactFromOperations(draft.operations.dailyRevenue, prevRevenue);
+      // ★ 收入影响员工士气（对比今日 vs 昨日）
+      const moraleImpact = calcMoraleImpactFromOperations(draft.operations.dailyRevenue, prevDailyRevenue);
       if (moraleImpact !== 0) {
         draft.riskState.employeeMorale = clamp(draft.riskState.employeeMorale + moraleImpact, 0, 100);
       }

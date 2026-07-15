@@ -1,22 +1,48 @@
 import type { Command } from '../interfaces/Command';
-import type { GameState } from '../GameState';
+import type { GameState, CardInstance } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { RegionId } from '../config/regions';
 import { REGION_MAP } from '../config/regions';
 import { createDefaultOperations } from './OperationsCommands';
 import { StaffRole } from '../entities/Employee';
+import { HARDWARE_SPECS } from '../config/resources';
+import type { StartupPreset } from '../config/startupPresets';
+import { DEPARTMENT_ROLE_MAP } from '../entities/Department';
+
+/** 生成随机姓名（根据地区语言） */
+function generateName(regionId: string): string {
+  const region = REGION_MAP[regionId];
+  const langs = region?.primaryLanguages ?? ['en'];
+  const isChinese = langs.some((l) => l.startsWith('zh'));
+
+  if (isChinese) {
+    const surnames = ['李', '王', '张', '刘', '陈', '杨', '赵', '黄', '周', '吴', '徐', '孙', '马', '朱', '胡'];
+    const givenNames = ['伟', '芳', '娜', '敏', '静', '丽', '强', '磊', '军', '洋', '勇', '艳', '杰', '涛', '明', '超', '霞', '平', '刚', '桂英'];
+    return `${surnames[Math.floor(Math.random() * surnames.length)]}${givenNames[Math.floor(Math.random() * givenNames.length)]}`;
+  }
+  const firstNames = ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Mary', 'Patricia', 'Jennifer', 'Linda', 'Elizabeth', 'Barbara', 'Susan', 'Jessica', 'Sarah', 'Thomas', 'Christopher', 'Daniel', 'Matthew', 'Emily'];
+  const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Thompson'];
+  return `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
+}
 
 /**
- * 设置总部地区并初始化运营区域 + 初始基础设施 + 初始员工。
+ * 设置总部地区并初始化运营区域 + 基础设施 + 初始员工 + 开局预设。
  *
- * ★ Bug #5 修复：选择总部时自动创建基础基础设施和初始员工。
+ * 基础设施（数据中心/集群/节点）固定创建，不随预设变化。
+ * 资金、算力卡、员工由预设决定。
  */
 export class SetHeadquartersCommand implements Command {
-  constructor(readonly regionId: RegionId) {}
+  constructor(
+    readonly regionId: RegionId,
+    readonly preset: StartupPreset,
+  ) {}
 
   execute(state: GameState, events: EventBus): void {
     const region = REGION_MAP[this.regionId];
     if (!region) return;
+
+    // 硬件规格查找表
+    const specMap = new Map(HARDWARE_SPECS.map((s) => [s.resourceId, s]));
 
     state.update((draft) => {
       draft.headquartersRegionId = this.regionId;
@@ -27,7 +53,7 @@ export class SetHeadquartersCommand implements Command {
         draft.operations = createDefaultOperations();
       }
 
-      // 小型数据中心（100 kW 电力）
+      // ===== 基础设施（固定） =====
       draft.dataCenters = [{
         id: 'dc-initial',
         name: '初始数据中心',
@@ -46,7 +72,6 @@ export class SetHeadquartersCommand implements Command {
         lastMaintenanceDay: draft.date,
       }];
 
-      // 基础集群
       draft.clusters = [{
         id: 'cluster-initial',
         name: '初始训练集群',
@@ -71,7 +96,6 @@ export class SetHeadquartersCommand implements Command {
         createdAt: draft.date,
       }];
 
-      // 1 台 8 槽服务器节点
       draft.serverNodes = [{
         id: 'node-initial',
         name: '初始训练节点',
@@ -92,102 +116,115 @@ export class SetHeadquartersCommand implements Command {
         lastMaintenanceDay: draft.date,
       }];
 
-      // 初始员工（3 研究员 + 2 数据工程师）
+      // ===== 资金 =====
+      const baseFunds = draft.resources['funds'] ?? 1_000_000;
+      draft.resources['funds'] = baseFunds + this.preset.bonusFunds;
+
+      // ===== 算力卡 + CardInstance =====
+      let totalTFlops = 0;
+      const node = draft.serverNodes[0];
+      for (const card of this.preset.cards) {
+        const spec = specMap.get(card.modelId);
+        if (!spec) continue;
+
+        // 增加资源计数
+        draft.resources[card.modelId] = (draft.resources[card.modelId] ?? 0) + card.count;
+
+        // 创建 CardInstance 并安装到节点
+        const pool: CardInstance[] = (draft.resourceMeta[card.modelId] as CardInstance[]) ?? [];
+        for (let i = 0; i < card.count; i++) {
+          const uid = `${card.modelId}-init-${i}`;
+          const inst: CardInstance = {
+            uid,
+            modelId: card.modelId,
+            status: 'online',
+            age: 0,
+            assignedProjectId: null,
+            purchasedAt: 0,
+            location: 'node-initial',
+          };
+          pool.push(inst);
+          node.installedCards.push(uid);
+          totalTFlops += spec.tflopsPerCard;
+        }
+        draft.resourceMeta[card.modelId] = pool;
+      }
+      draft.resources['compute_power'] = totalTFlops;
+
+      // ===== 员工 =====
       const baseSalaryMultiplier = 0.5 + (region.talentIndex / 100) * 0.5;
-      draft.employees = [
-        {
-          id: 'emp-res-1',
-          name: '张明',
-          role: StaffRole.RESEARCHER,
-          status: 'idle',
-          level: 3,
-          experience: 0,
-          skillPoints: 0,
-          skills: [],
-          salary: Math.round(120000 * baseSalaryMultiplier),
-          loyalty: 70,
-          fatigue: 0,
-          hireDay: draft.date,
-          attributes: { intelligence: 75, creativity: 65, leadership: 40, stamina: 60, charisma: 50 },
-        },
-        {
-          id: 'emp-res-2',
-          name: 'Sarah Chen',
-          role: StaffRole.RESEARCHER,
-          status: 'idle',
-          level: 3,
-          experience: 0,
-          skillPoints: 0,
-          skills: [],
-          salary: Math.round(120000 * baseSalaryMultiplier),
-          loyalty: 75,
-          fatigue: 0,
-          hireDay: draft.date,
-          attributes: { intelligence: 80, creativity: 70, leadership: 35, stamina: 55, charisma: 45 },
-        },
-        {
-          id: 'emp-res-3',
-          name: '田中太郎',
-          role: StaffRole.RESEARCHER,
-          status: 'idle',
-          level: 2,
-          experience: 0,
-          skillPoints: 0,
-          skills: [],
-          salary: Math.round(95000 * baseSalaryMultiplier),
-          loyalty: 80,
-          fatigue: 0,
-          hireDay: draft.date,
-          attributes: { intelligence: 70, creativity: 60, leadership: 30, stamina: 65, charisma: 55 },
-        },
-        {
-          id: 'emp-de-1',
-          name: '李明',
-          role: StaffRole.DATA_ENGINEER,
-          status: 'idle',
-          level: 2,
-          experience: 0,
-          skillPoints: 0,
-          skills: [],
-          salary: Math.round(80000 * baseSalaryMultiplier),
-          loyalty: 75,
-          fatigue: 0,
-          hireDay: draft.date,
-          attributes: { intelligence: 60, creativity: 50, leadership: 35, stamina: 70, charisma: 45 },
-        },
-        {
-          id: 'emp-de-2',
-          name: 'Alice Wang',
-          role: StaffRole.DATA_ENGINEER,
-          status: 'idle',
-          level: 2,
-          experience: 0,
-          skillPoints: 0,
-          skills: [],
-          salary: Math.round(80000 * baseSalaryMultiplier),
-          loyalty: 70,
-          fatigue: 0,
-          hireDay: draft.date,
-          attributes: { intelligence: 65, creativity: 55, leadership: 30, stamina: 65, charisma: 50 },
-        },
-      ];
+      const roleBaseSalary: Record<StaffRole, number> = {
+        [StaffRole.RESEARCHER]: 120000,
+        [StaffRole.DATA_ENGINEER]: 80000,
+        [StaffRole.SYSTEM_ENGINEER]: 90000,
+        [StaffRole.PRODUCT_MANAGER]: 100000,
+        [StaffRole.LEGAL_PR]: 85000,
+      };
 
-      draft.resources['staff_researcher'] = 3;
-      draft.resources['staff_data_engineer'] = 2;
+      const employees: any[] = [];
+      let empIdx = 0;
 
-      // 自动将初始员工加入对应部门
-      const researchDept = draft.departments.find((d) => d.type === 'research');
-      const dataDept = draft.departments.find((d) => d.type === 'data');
-      if (researchDept) {
-        researchDept.memberIds = ['emp-res-1', 'emp-res-2', 'emp-res-3'];
-        for (const emp of draft.employees) {
-          if (emp.role === StaffRole.RESEARCHER) emp.departmentId = researchDept.id;
+      for (const empCfg of this.preset.employees) {
+        for (let i = 0; i < empCfg.count; i++) {
+          const empId = `emp-init-${empIdx++}`;
+          employees.push({
+            id: empId,
+            name: generateName(this.regionId),
+            role: empCfg.role,
+            status: 'idle',
+            level: empCfg.level,
+            experience: 0,
+            skillPoints: 0,
+            skills: [],
+            salary: Math.round(roleBaseSalary[empCfg.role] * baseSalaryMultiplier),
+            loyalty: 75,
+            fatigue: 0,
+            hireDay: draft.date,
+            attributes: {
+              intelligence: 60 + Math.floor(Math.random() * 25),
+              creativity: 50 + Math.floor(Math.random() * 25),
+              leadership: 30 + Math.floor(Math.random() * 25),
+              stamina: 55 + Math.floor(Math.random() * 20),
+              charisma: 40 + Math.floor(Math.random() * 20),
+            },
+            departmentId: null,
+            trainingId: null,
+            hasEquity: false,
+            equityGrantedDay: null,
+            lastBonusDay: null,
+            monthlyWorkDays: 0,
+            monthlyContribution: 0,
+            lastPerformance: null,
+          });
         }
       }
-      if (dataDept) {
-        dataDept.memberIds = ['emp-de-1', 'emp-de-2'];
-        for (const emp of draft.employees) {
-          if (emp.role === StaffRole.DATA_ENGINEER) emp.departmentId = dataDept.id;
+
+      draft.employees = employees;
+
+      // 更新普通员工资源计数
+      const roleResourceMap: Record<StaffRole, string> = {
+        [StaffRole.RESEARCHER]: 'staff_researcher',
+        [StaffRole.DATA_ENGINEER]: 'staff_data_engineer',
+        [StaffRole.SYSTEM_ENGINEER]: 'staff_system_engineer',
+        [StaffRole.PRODUCT_MANAGER]: 'staff_product_manager',
+        [StaffRole.LEGAL_PR]: 'staff_legal_pr',
+      };
+      for (const empCfg of this.preset.employees) {
+        const resId = roleResourceMap[empCfg.role];
+        draft.resources[resId] = (draft.resources[resId] ?? 0) + empCfg.count;
+      }
+
+      // 自动将员工加入对应部门
+      for (const emp of employees) {
+        const deptType = (Object.entries(DEPARTMENT_ROLE_MAP).find(
+          ([, role]) => role === emp.role,
+        )?.[0]) as string | undefined;
+        if (deptType) {
+          const dept = draft.departments.find((d) => d.type === deptType);
+          if (dept) {
+            dept.memberIds.push(emp.id);
+            emp.departmentId = dept.id;
+          }
         }
       }
     });

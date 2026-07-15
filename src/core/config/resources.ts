@@ -26,7 +26,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     isContinuous: true,
     minValue: 0,
     maxValue: Infinity,
-    initialValue: 624, // 初始 1 张 A100 = 624 TFLOPS
+    initialValue: 0, // 由开局预设决定
     uiConfig: { icon: '\u{1F9E0}', color: '#a78bfa', showInTopBar: true, format: 'tflops' },
   },
   // ===== 硬件（不在顶栏显示，详情见资源面板） =====
@@ -57,7 +57,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     isContinuous: false,
     minValue: 0,
     maxValue: 10000,
-    initialValue: 1,
+    initialValue: 0, // 由开局预设决定
     uiConfig: { icon: '\u{1F5A5}\uFE0F', color: '#56dce6', showInTopBar: false, format: 'number' },
   },
   {
@@ -108,7 +108,7 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     isContinuous: true,
     minValue: 0,
     maxValue: 1_000_000,
-    initialValue: 100,
+    initialValue: 0, // 无初始电站，超容自动从电网购电
     uiConfig: { icon: '\u26A1', color: '#ffb454', showInTopBar: true, format: 'number' },
   },
   // ===== 普通员工（每种角色对应一种资源） =====

@@ -20,6 +20,9 @@ import { calcValuation } from '../../core/utils/marketCalc';
 import { REGION_MAP, LANGUAGE_NAMES, getRegionsByContinent } from '../../core/config/regions';
 import styles from '../styles/App.module.css';
 
+/** 1M = 1,000,000（竞争对手估值/金额单位为 M，需换算为实际美元） */
+const M = 1_000_000;
+
 type BizTab = 'regions' | 'operations' | 'funding' | 'competitive';
 
 const BIZ_TABS: { key: BizTab; label: string }[] = [
@@ -208,19 +211,21 @@ function CompetitiveTab({ game }: { game: ReturnType<typeof useGame> }) {
 
       {competitorStates.map((c: any) => {
         const avgCap = Object.values(c.capabilities as Record<string, number>).reduce((s: number, v: number) => s + v, 0) / 16;
-        const valuation = c.funds * 10 + c.computeUnits * 0.5 + c.headcount * 0.2 + avgCap * 2;
+        // 估值 M → 实际美元
+        const valuationM = c.funds * 10 + c.computeUnits * 0.5 + c.headcount * 0.2 + avgCap * 2;
+        const valuation = valuationM * M;
         const acqCost = Math.floor(valuation * 1.5);
         return (
           <div key={c.id}>
             <div className={styles.devRow}>
               <span className={styles.devRowLabel} style={{ minWidth: 0 }}>{c.name}</span>
-              <span className={styles.devHint}>估值 ${valuation.toFixed(0)}M</span>
+              <span className={styles.devHint}>估值 ${valuationM.toFixed(0)}M</span>
             </div>
             <div className={styles.devRow}>
               <button className={styles.btn} disabled={funds < acqCost} onClick={() => game.executeCommand(new AcquireCompetitorCommand(c.id, acqCost))}>
-                收购 (${acqCost}M)
+                收购 (${(acqCost / M).toFixed(0)}M)
               </button>
-              <button className={styles.btn} disabled={funds < 50} onClick={() => game.executeCommand(new PoachTalentCommand(c.id, 50))}>
+              <button className={styles.btn} disabled={funds < 50 * M} onClick={() => game.executeCommand(new PoachTalentCommand(c.id, 50 * M))}>
                 挖角 ($50M)
               </button>
               <button className={styles.btn} style={{ color: '#ff6b6b', borderColor: '#ff6b6b' }} onClick={() => {
@@ -255,7 +260,7 @@ function CompetitiveTab({ game }: { game: ReturnType<typeof useGame> }) {
             {corp.effects.gpuDiscount > 0 && ` · GPU${(corp.effects.gpuDiscount * 100).toFixed(0)}%折`}
             {corp.effects.defenseAccess && ' · 安全许可'}
           </span>
-          <button className={styles.btn} disabled={funds < corp.minInvestment} onClick={() => game.executeCommand(new InfiltrateCorpCommand(corp.id, corp.minInvestment))}>
+          <button className={styles.btn} disabled={funds < corp.minInvestment * M} onClick={() => game.executeCommand(new InfiltrateCorpCommand(corp.id, corp.minInvestment * M))}>
             渗透 (${corp.minInvestment}M)
           </button>
         </div>

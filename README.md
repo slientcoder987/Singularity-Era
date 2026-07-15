@@ -1,57 +1,164 @@
-# React + TypeScript + Vite
+# 奇点纪元 (Singularity Era)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AI 公司模拟经营游戏。玩家扮演 AI 创业公司创始人，从零开始构建一个 AI 帝国——招募员工、采购算力、训练大模型、发布 API 服务、扩张全球市场，最终成为行业霸主。
 
-Currently, two official plugins are available:
+## 游戏特色
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **13 个相互联动的系统**：从硬件到人才到市场，每个决策都会产生连锁反应
+- **33 个全球地区**：不同的人才储备、能源成本、监管环境和市场潜力
+- **深度员工系统**：招聘、培训、晋升、绩效评估、部门管理、股权激励
+- **完整 AI 训练流水线**：数据采集 → 模型训练 → 能力评估 → API 发布
+- **竞争对手模拟**：6 家匿名化 AI 巨头自主决策、融资、训练、发布模型
+- **激进操作**：收购竞争对手、挖角风暴、黑客窃取、股权渗透
+- **电力与算力管理**：自建电站 vs 电网购电，云算力租赁（6 家匿名化云服务商）
 
-## Expanding the ESLint configuration
+## 开局流程
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. **选择总部地区** — 33 个地区，推荐选择经济发达地区（东亚、合众国、西欧）
+2. **选择开局策略** — 3 个预设 + 自定义配置
+   - 自力更生：$5M 资金，少量算力和员工
+   - 均衡起步：$2M 资金，适中配置
+   - 技术驱动：$1M 资金，算力拉满
+   - 自定义：独立选择资金（$1M-$20M）、算力卡（A100/H100/L40S）、员工（5 种角色 × 等级 1-10）
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+## 核心系统
+
+### 基础设施层
+
+| 系统 | 职责 |
+|------|------|
+| **ComputeHardware** | 硬件订单交付、磨损故障、算力统计 |
+| **PowerSystem** | 电力平衡：自建电站 + 超容自动电网购电 |
+| **InfraMaintenance** | 数据中心/集群/节点的日常维护与费用 |
+| **InfrastructureFailure** | 硬件故障事件，系统工程师可降低故障率 |
+
+### 人才层
+
+| 系统 | 职责 |
+|------|------|
+| **StaffSystem** | 员工管理：薪资发放、忠诚度/疲劳、绩效评估、挖角防御 |
+| **TrainingSystem** | 员工培训项目：技能/进阶/海外，影响效率和属性 |
+
+### 研发层
+
+| 系统 | 职责 |
+|------|------|
+| **TechResearch** | 科技树研究，解锁新架构和训练技术 |
+| **ResearchSystem** | 模型研发项目：架构设计 → 实验 → 发布 |
+| **CollectionSystem** | 数据采集：自采集（数据工程师）+ 购买（冷却期） |
+
+### 商业层
+
+| 系统 | 职责 |
+|------|------|
+| **OperationsSystem** | API 服务运营：用户增长、收入计算、市场渗透 |
+| **CompetitorSystem** | 竞争对手 AI：融资、训练、发布、丑闻、合并 |
+| **RiskSystem** | 风险管理：法律/信任负债、员工士气、安全事件 |
+| **RegionSystem** | 地区市场：进入/发布、税率、数据本地化 |
+
+## 员工系统
+
+### 核心员工（5 种角色）
+
+| 角色 | 部门 | 基础年薪 | 主要属性 |
+|------|------|---------|---------|
+| 研究员 | 研发部 | $120K | 智力 |
+| 数据工程师 | 数据部 | $80K | 耐力 |
+| 系统工程师 | 基础设施部 | $90K | 耐力 |
+| 产品经理 | 产品部 | $100K | 魅力 |
+| 法务/公关 | 法务部 | $85K | 魅力 |
+
+- **等级体系**：L1-L10，影响效率和薪资
+- **属性系统**：智力、创造力、领导力、耐力、魅力（随机生成 + 培训提升）
+- **绩效评估**：每 30 天一次，S/A/B/C 四级，影响晋升
+- **激励机制**：奖金（30 天冷却）、股权（730 天锁定）、团建活动
+- **部门加成**：负责人领导力影响部门效率
+
+### 普通员工
+
+统一招聘成本 $3,000（>50 人递增），年薪 $50,000，按角色分配到对应部门。
+
+## 跨系统联动
+
+员工属性不是孤立数字，而是切实影响所有系统：
+
+- **研究员** → 加速模型训练、降低训练事件概率、加速科技研究
+- **数据工程师** → 加速数据采集
+- **系统工程师** → 降低基础设施故障率
+- **产品经理** → 提升 API 运营收入倍率
+- **法务/公关** → 降低法律和信任负债
+- **部门负责人** → 部门效率加成（领导力 × 0.3%）
+- **全公司协调** → 所有负责人领导力均值 × 0.1%
+
+## 电力与算力
+
+### 电力
+
+- 初始无电站，所有功耗从电网购电
+- 电网电价 = 基础电价 × 地区能源成本乘数
+- 可自建电站降低长期电力成本（$800/kW）
+
+### 算力卡
+
+| 型号 | 算力 (TFLOPS) | 功耗 (kW) | 价格 | 交付 |
+|------|-------------|----------|------|------|
+| L40S | 733 | 0.3 | $8K | 3 天 |
+| A100 40GB | 312 | 0.3 | $6K | 2 天 |
+| A100 80GB | 624 | 0.4 | $10K | 3 天 |
+| H100 80GB | 1,979 | 0.7 | $30K | 7 天 |
+| H200 141GB | 1,979 | 0.7 | $40K | 10 天 |
+| B200 192GB | 4,500 | 1.0 | $45K | 14 天 |
+| GB300 288GB | 7,500 | 1.5 | $75K | 21 天 |
+
+### 云算力租赁
+
+6 家匿名化云服务商，按地区提供不同价格和上限：
+- Nimbus Cloud / Stratus AI / Cirrus Compute / Nova Cloud / Aurora AI / Tenji Compute
+
+## 技术架构
+
+```
+src/
+├── core/           # 纯 TypeScript 游戏引擎（无 React/DOM 依赖）
+│   ├── config/     # 配置文件（资源、硬件、地区、员工、预设等）
+│   ├── entities/   # 实体定义（员工、部门、竞争对手、模型等）
+│   ├── commands/   # 命令模式（所有操作封装为 Command）
+│   ├── systems/    # 13 个游戏系统（每日按顺序执行）
+│   ├── resources/  # 资源注册表
+│   ├── utils/      # 工具函数（效率计算、跨系统联动、市场计算）
+│   ├── Game.ts     # 游戏主类
+│   ├── GameLoop.ts # 游戏循环
+│   └── GameState.ts# 状态管理（immer 不可变更新）
+├── ui/             # React 前端
+│   ├── components/ # UI 组件（面板、控制栏、开局界面等）
+│   ├── hooks/      # useGame / useGameState
+│   ├── context/    # GameProvider（React Context）
+│   └── styles/     # CSS Modules
+└── main.tsx        # 入口（初始化 Game + 注册系统）
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 设计原则
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- **命令模式**：所有操作封装为 Command，通过 `game.executeCommand()` 执行
+- **系统模式**：13 个系统每日按固定顺序执行，职责单一
+- **不可变状态**：所有状态通过 `state.read()` / `state.update(draft => ...)` 管理
+- **配置驱动**：新资源/硬件/地区通过配置文件添加，无需修改核心逻辑
+- **核心与 UI 分离**：`src/core/` 纯 TypeScript，`src/ui/` React + CSS Modules
 
-export default tseslint.config({
-  extends: [
-    // other configs...
-    // Enable lint rules for React
-    reactX.configs['recommended-typescript'],
-    // Enable lint rules for React DOM
-    reactDom.configs.recommended,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+## 开发
+
+```bash
+npm install          # 安装依赖
+npm run dev          # 启动开发服务器
+npm run build        # 构建生产版本
+npm run preview      # 预览构建产物
+npm run check        # TypeScript 类型检查
 ```
+
+## 技术栈
+
+- **前端**：React 18 + TypeScript (strict mode)
+- **构建**：Vite
+- **状态管理**：Immer（不可变更新）
+- **样式**：CSS Modules
+- **架构**：Entity-Component-System (ECS) 启发式设计

@@ -104,11 +104,13 @@ const initialData: GameData = {
 const registry = new ResourceRegistry();
 registry.registerAll(INITIAL_RESOURCES);
 
-// ComputeHardware → Power → Staff → TechResearch → Research → Collection → InfraFailure → Training → InfraMaintenance → Operations → Competitor → Risk → Region
+// 系统执行顺序（按每日依赖关系排列）：
+// ComputeHardware → Power → TechResearch → Research → Collection → InfraFailure → Training → InfraMaintenance → Operations → Competitor → Risk → Region → Staff
+// StaffSystem 放在最后：确保绩效评估在 Research/Collection/Training 贡献累积之后执行，
+// 同时确保 morale→loyalty 联动使用 Operations 已更新的当日士气值。
 const systems = [
   new ComputeHardwareSystem(registry),
   new PowerSystem(registry),
-  new StaffSystem(),
   new TechResearchSystem(),
   new ResearchSystem(),
   new CollectionSystem(),
@@ -119,6 +121,7 @@ const systems = [
   new CompetitorSystem(),
   new RiskSystem(),
   new RegionSystem(),
+  new StaffSystem(),
 ];
 
 // 3. 创建 Game，传入 registry（Game 内部会再次 registerAll，幂等）
