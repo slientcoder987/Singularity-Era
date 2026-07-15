@@ -50,6 +50,12 @@ export class StaffSystem implements System {
     state.update((draft) => {
       const survivors: Employee[] = [];
 
+      // 设计-12 修复：士气自然恢复放在所有事件冲击之后（StaffSystem 是最后一个系统），
+      // 确保当日 DECEPTION_EXPOSED / VAM_FAILED 等冲击已应用，恢复作用于"最终"士气值。
+      if (draft.riskState.employeeMorale < 100) {
+        draft.riskState.employeeMorale = Math.min(100, draft.riskState.employeeMorale + 0.1 * deltaDays);
+      }
+
       // 获取总部地区用于薪资竞争力计算
       const hqRegionId = draft.headquartersRegionId;
       const hqRegion = hqRegionId ? REGIONS.find((r) => r.id === hqRegionId) ?? null : null;
@@ -83,23 +89,6 @@ export class StaffSystem implements System {
             emp.fatigue = clamp(emp.fatigue - StaffSystem.IDLE_FATIGUE_RECOVERY * deltaDays, 0, 100);
           }
 
-          // —— 忠诚度 ——
-          let loyaltyDelta = -StaffSystem.DAILY_LOYALTY_DECAY * deltaDays;
-          // 高疲劳加速衰减
-          if (emp.fatigue > 70) {
-            loyaltyDelta -= (emp.fatigue - 70) * 0.02 * deltaDays;
-          }
-          // 魅力可抵抗衰减
-          loyaltyDelta += emp.attributes.charisma * 0.01 * deltaDays;
-          // 薪资竞争力影响
-          const competitiveness = salaryCompetitiveness(emp, hqRegion);
-          loyaltyDelta += salaryLoyaltyDelta(competitiveness) * deltaDays;
-          // 全公司士气影响忠诚度（-10 ~ +5 /天）
-          const morale = draft.riskState.employeeMorale ?? 50;
-          const moraleEffect = ((morale - 50) / 50) * 0.2;
-          loyaltyDelta += moraleEffect * deltaDays;
-          emp.loyalty = clamp(emp.loyalty + loyaltyDelta, 0, 100);
-
           // —— 经验 ——
           const expGain = (emp.status === 'assigned'
             ? StaffSystem.DAILY_EXPERIENCE_WORK
@@ -118,6 +107,25 @@ export class StaffSystem implements System {
             levelUpList.push({ employeeId: emp.id, newLevel: emp.level });
           }
         }
+
+        // —— 忠诚度 ——
+        // 设计-1 修复：training 员工也应用忠诚度衰减与士气影响，
+        // 防止玩家把低忠诚员工反复送去培训以规避忠诚度衰减。
+        let loyaltyDelta = -StaffSystem.DAILY_LOYALTY_DECAY * deltaDays;
+        // 高疲劳加速衰减
+        if (emp.fatigue > 70) {
+          loyaltyDelta -= (emp.fatigue - 70) * 0.02 * deltaDays;
+        }
+        // 魅力可抵抗衰减
+        loyaltyDelta += emp.attributes.charisma * 0.01 * deltaDays;
+        // 薪资竞争力影响
+        const competitiveness = salaryCompetitiveness(emp, hqRegion);
+        loyaltyDelta += salaryLoyaltyDelta(competitiveness) * deltaDays;
+        // 全公司士气影响忠诚度（-10 ~ +5 /天）
+        const morale = draft.riskState.employeeMorale ?? 50;
+        const moraleEffect = ((morale - 50) / 50) * 0.2;
+        loyaltyDelta += moraleEffect * deltaDays;
+        emp.loyalty = clamp(emp.loyalty + loyaltyDelta, 0, 100);
 
         // —— 离职检查 ——
         // 股权锁定期内不可离职
@@ -148,10 +156,8 @@ export class StaffSystem implements System {
       events.emit('STAFF_TRAINING_COMPLETED', { employeeId, trainingId });
     }
 
-    // 3. 发薪
-    if (today > 0 && today % PAY_PERIOD_DAYS === 0) {
-      this.processPayroll(state, events);
-    }
+    // 3. 发薪（设计 #4 修复：改为每日扣薪，精确计算）
+    this.processDailyPayroll(state, events, deltaDays, today);
 
     // 4. 绩效评估
     if (today > 0 && today - state.read().lastPerformanceEvalDay >= PERFORMANCE_EVAL_PERIOD) {
@@ -177,17 +183,20 @@ export class StaffSystem implements System {
     }
   }
 
-  /** 处理发薪 */
-  private processPayroll(state: GameState, events: EventBus): void {
+  /** 每日扣薪（设计 #4：按日累计精确计算，不再按周期一次性扣） */
+  private processDailyPayroll(state: GameState, events: EventBus, deltaDays: number, today: number): void {
     const current = state.read();
     const dailyTotal = current.employees.reduce((sum, e) => sum + e.salary / 365, 0);
-    const totalSalary = dailyTotal * PAY_PERIOD_DAYS;
+    const totalSalary = dailyTotal * deltaDays;
 
     if (totalSalary > 0) {
       state.update((draft) => {
         draft.resources['funds'] = (draft.resources['funds'] ?? 0) - totalSalary;
       });
-      events.emit('SALARY_PAID', totalSalary, current.employees.length);
+      // 每 30 天发射一次 SALARY_PAID 事件（供 UI 展示月度薪资报告）
+      if (today > 0 && today % PAY_PERIOD_DAYS === 0) {
+        events.emit('SALARY_PAID', dailyTotal * PAY_PERIOD_DAYS, current.employees.length);
+      }
     }
   }
 

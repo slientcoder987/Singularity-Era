@@ -18,6 +18,8 @@ import {
   calculateCapabilities,
 } from '../utils/capabilityCalc';
 import { getStaffTrainingSpeedMultiplier, getStaffTrainingStabilityBonus, accumulateResearcherContribution } from '../utils/crossSystemUtils';
+import { getActiveCloudTFLOPS } from '../utils/cloudComputeUtils';
+import { StaffRole } from '../entities/Employee';
 
 /** 计算期望损失（基于训练进度 0-1） */
 function calcExpectedLoss(progress: number): number {
@@ -71,6 +73,9 @@ export class TrainingSystem implements System {
       loss: number; valLoss: number; phase: string; stability: number;
     }> = [];
     const events_log: Array<{ id: string; day: number; event: string; severity: 'info' | 'warning' | 'critical' }> = [];
+    // BUG-6 修复：收集 update 内的事件，update 结束后再 emit
+    const pausedProjects: Array<{ id: string; reason: string }> = [];
+    const releasedModels: Array<{ name: string; score: number }> = [];
 
     state.update((draft) => {
       for (const project of draft.trainingProjects) {
@@ -82,7 +87,7 @@ export class TrainingSystem implements System {
         if (cardSpecs.length === 0) {
           project.status = 'paused';
           project.pauseReason = '无可用计算卡';
-          events.emit('TRAINING_PAUSED', project.id, project.pauseReason);
+          pausedProjects.push({ id: project.id, reason: project.pauseReason });
           continue;
         }
 
@@ -147,7 +152,11 @@ export class TrainingSystem implements System {
 
         // 每日推进 = 有效算力 × 阶段修正 × deltaDays
         const staffSpeedMult = getStaffTrainingSpeedMultiplier(draft);
-        const dailyProgress = result.effectiveTflops * phaseModifier * deltaDays * staffSpeedMult;
+        // BUG-2 修复：累加活跃云算力（云算力无集群/电力加成，仅受利用率影响）
+        const cloudTFLOPS = getActiveCloudTFLOPS(draft);
+        const cloudUtilization = 0.9;
+        const cloudProgress = cloudTFLOPS * cloudUtilization * phaseModifier * deltaDays * staffSpeedMult;
+        const dailyProgress = result.effectiveTflops * phaseModifier * deltaDays * staffSpeedMult + cloudProgress;
         project.computeRemaining = Math.max(0, project.computeRemaining - dailyProgress);
 
         // 计算训练进度
@@ -321,17 +330,23 @@ export class TrainingSystem implements System {
             };
             draft.models.push(model);
 
-            // ★ 模型发布 → 累积贡献 + 竞争对手感知
-            accumulateResearcherContribution(draft, [], 5);
-            events.emit('PLAYER_MODEL_RELEASED', project.modelName, model.baseScore);
+            // ★ Bug #9 修复 + 设计 #7：将训练贡献分配给所有 idle 研究员
+            const trainingResearcherIds = draft.employees
+              .filter((e) => e.role === StaffRole.RESEARCHER && e.status === 'idle')
+              .map((e) => e.id);
+            accumulateResearcherContribution(draft, trainingResearcherIds, 5);
+            releasedModels.push({ name: project.modelName, score: model.baseScore });
           }
         } else {
-          // 每日贡献累积
-          accumulateResearcherContribution(draft, [], 1);
+          // 每日贡献累积（Bug #9 修复：分配给 idle 研究员）
+          const dailyResearcherIds = draft.employees
+            .filter((e) => e.role === StaffRole.RESEARCHER && e.status === 'idle')
+            .map((e) => e.id);
+          accumulateResearcherContribution(draft, dailyResearcherIds, 1);
           progressInfo.push({
             id: project.id,
             modelName: project.modelName,
-            effectiveTflops: result.effectiveTflops,
+            effectiveTflops: result.effectiveTflops + cloudTFLOPS * 0.9,
             utilization: result.utilization,
             loss: project.currentLoss,
             valLoss: project.validationLoss,
@@ -344,6 +359,12 @@ export class TrainingSystem implements System {
 
     for (const c of completed) {
       events.emit('TRAINING_COMPLETED', c.id, c.modelName);
+    }
+    for (const p of pausedProjects) {
+      events.emit('TRAINING_PAUSED', p.id, p.reason);
+    }
+    for (const r of releasedModels) {
+      events.emit('PLAYER_MODEL_RELEASED', r.name, r.score);
     }
     for (const p of progressInfo) {
       events.emit('TRAINING_PROGRESS', p);

@@ -52,26 +52,51 @@ export class PowerSystem implements System {
     const capacityKW = current.resources['power_kw'] ?? 0;
     const excessKW = Math.max(0, totalPowerKW - capacityKW);
 
-    // 3. 超容部分自动从电网购电
-    if (excessKW > 0) {
+    // 3. 电力计费
+    // ★ Bug #3 修复：PowerSystem 统一收取 IT 功耗电费
+    // 自建电站覆盖容量内按数据中心电价收费，超出部分按市场电价（更高）收费
+    // 冷却功耗（PUE-1 部分）由 InfraMaintenanceSystem 收取
+    const itPowerKW = totalPowerKW; // 卡本身功耗
+    const coveredKW = Math.min(itPowerKW, capacityKW);
+    const uncoveredKW = Math.max(0, itPowerKW - capacityKW);
+
+    if (itPowerKW > 0) {
       const regionMods = getRegionModifiers(current.headquartersRegionId);
-      // 市场电价 = 基础电价 × 地区能源乘数
       const marketPricePerKWh = POWER_CONFIG.pricePerKWh * regionMods.energyMultiplier;
-      // 日费用 = 超出kW × 24h × 电价 × deltaDays
-      const gridCost = excessKW * 24 * marketPricePerKWh * deltaDays;
+
+      // 自建电站覆盖部分：按数据中心电价（较低）
+      const dcPowerCost = current.dataCenters.reduce((sum, dc) => {
+        return sum + dc.powerCostPerKWh;
+      }, 0);
+      const dcPricePerKWh = current.dataCenters.length > 0
+        ? dcPowerCost / current.dataCenters.length
+        : marketPricePerKWh;
+
+      // 覆盖部分费用 + 超容部分费用
+      const coveredCost = coveredKW * 24 * dcPricePerKWh * deltaDays;
+      const gridCost = uncoveredKW * 24 * marketPricePerKWh * deltaDays;
+      const totalPowerCost = coveredCost + gridCost;
 
       state.update((draft) => {
-        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - gridCost;
+        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - totalPowerCost;
+        // 设计-2：累加当日电力成本，供 RegionSystem 计算利润税基
+        if (draft.lastDayPowerCostDate !== current.date) {
+          draft.lastDayPowerCostDate = current.date;
+          draft.lastDayPowerCost = 0;
+        }
+        draft.lastDayPowerCost += totalPowerCost;
       });
 
-      events.emit('GRID_PURCHASE', {
-        consumptionKW: totalPowerKW,
-        capacityKW,
-        excessKW,
-        marketPricePerKWh,
-        dailyCost: gridCost / deltaDays,
-        deltaDays,
-      });
+      if (uncoveredKW > 0) {
+        events.emit('GRID_PURCHASE', {
+          consumptionKW: totalPowerKW,
+          capacityKW,
+          excessKW,
+          marketPricePerKWh,
+          dailyCost: gridCost / deltaDays,
+          deltaDays,
+        });
+      }
     }
 
     // 4. 发射电力平衡事件（供 UI 和其他系统使用）

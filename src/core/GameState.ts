@@ -167,6 +167,13 @@ export interface GameData {
   lastTeamBuildingDay: number;
   /** 上次绩效评估日 */
   lastPerformanceEvalDay: number;
+
+  // ===== 设计-2 修复：电力成本统一记账 =====
+  /** 上一个游戏日实际扣除的电力成本（由 PowerSystem + InfraMaintenanceSystem 累加），
+   *  供 RegionSystem 计算利润税基使用，避免重新估算导致与实扣金额不一致。 */
+  lastDayPowerCost: number;
+  /** lastDayPowerCost 对应的游戏日（用于检测跨日重置） */
+  lastDayPowerCostDate: number;
 }
 
 /** 基础设施事件日志条目 */

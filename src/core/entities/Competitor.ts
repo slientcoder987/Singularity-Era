@@ -80,6 +80,10 @@ export interface CompetitorState {
   infiltrationLevel: number;
   /** 已获取的情报 */
   intel: CompetitorIntel[];
+
+  // ---- 破产追踪（设计-14）----
+  /** 资金归零累计天数，达到 BANKRUPT_THRESHOLD 后退出市场 */
+  bankruptDays?: number;
 }
 
 /** 预设竞争对手模板 */

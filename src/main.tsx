@@ -98,6 +98,9 @@ const initialData: GameData = {
   pendingCandidates: [],
   lastTeamBuildingDay: -999,
   lastPerformanceEvalDay: 0,
+  // 设计-2：电力成本统一记账初始值
+  lastDayPowerCost: 0,
+  lastDayPowerCostDate: -1,
 };
 
 // 1. 先创建 registry 并注册资源

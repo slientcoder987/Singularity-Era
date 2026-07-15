@@ -561,7 +561,8 @@ export class MaintainDataCenterCommand implements Command {
       const d = draft.dataCenters.find((x) => x.id === this.dcId);
       if (d) {
         d.currentPue = d.basePue;
-        d.lastMaintenanceDay = state.read().date;
+        // BUG-5 修复：直接用 draft.date，避免在 update 回调中调用 state.read() 拿到旧快照
+        d.lastMaintenanceDay = draft.date;
       }
     });
 

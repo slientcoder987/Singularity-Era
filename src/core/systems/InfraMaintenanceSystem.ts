@@ -100,9 +100,12 @@ export class InfraMaintenanceSystem implements System {
       const totalPowerKW = trainingPowerKW + idlePowerKW;
       const actualPowerMW = totalPowerKW / 1000;
 
-      // 电力成本 = 功耗(kW) × currentPue × 24h × 电价(/kWh) × regionEnergyModifier × deltaDays
+      // ★ Bug #3 修复：电力成本只计算 PUE 乘数效应（冷却/照明等额外功耗）
+      // 卡本身功耗电费由 PowerSystem 统一处理（超容购电或自建电站覆盖）
+      // PUE 1.2 意味着每 1kW IT 负载需要额外 0.2kW 冷却功耗
       const regionMods = getRegionModifiers(current.headquartersRegionId);
-      const dailyPowerCost = totalPowerKW * effectivePue * 24 * dc.powerCostPerKWh * regionMods.energyMultiplier * deltaDays;
+      const coolingOverheadKW = totalPowerKW * (effectivePue - 1);
+      const dailyPowerCost = coolingOverheadKW * 24 * dc.powerCostPerKWh * regionMods.energyMultiplier * deltaDays;
       totalDcPowerCost += dailyPowerCost;
 
       // 过载检测
@@ -117,6 +120,15 @@ export class InfraMaintenanceSystem implements System {
     state.update((draft) => {
       if (totalCost > 0) {
         draft.resources['funds'] = (draft.resources['funds'] ?? 0) - totalCost;
+      }
+
+      // 设计-2：把冷却功耗电费累加到 lastDayPowerCost（与 PowerSystem 的 IT 电费合并）
+      if (totalDcPowerCost > 0) {
+        if (draft.lastDayPowerCostDate !== current.date) {
+          draft.lastDayPowerCostDate = current.date;
+          draft.lastDayPowerCost = 0;
+        }
+        draft.lastDayPowerCost += totalDcPowerCost;
       }
 
       // 更新 PUE 衰减

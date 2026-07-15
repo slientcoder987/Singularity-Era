@@ -177,6 +177,9 @@ export class PoachTalentCommand implements Command {
 // 袭击关键人物（极高风险）
 // ============================================================
 
+/** 袭击关键人物单次成本（美元） */
+const ASSAULT_KEY_PERSONNEL_COST = 10_000_000;
+
 export class AssaultKeyPersonnelCommand implements Command {
   constructor(private competitorId: string) {}
 
@@ -184,6 +187,13 @@ export class AssaultKeyPersonnelCommand implements Command {
     const found = findComp(state, this.competitorId);
     if (!found) return;
     const { comp } = found;
+
+    // BUG-8 修复：袭击需要支付黑市费用，检查资金
+    const funds = state.read().resources['funds'] ?? 0;
+    if (funds < ASSAULT_KEY_PERSONNEL_COST) {
+      events.emit('ASSAULT_REJECTED', `资金不足，需要 $${ASSAULT_KEY_PERSONNEL_COST.toLocaleString()}`);
+      return;
+    }
 
     const successChance = 0.05 + comp.infiltrationLevel * 0.03;
     const exposureChance = 0.80 - comp.infiltrationLevel * 0.10;
@@ -193,6 +203,7 @@ export class AssaultKeyPersonnelCommand implements Command {
 
     if (exposureRoll < exposureChance) {
       state.update((draft) => {
+        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - ASSAULT_KEY_PERSONNEL_COST;
         draft.riskState.reputation = 0;
         draft.riskState.legalDebt = 20;
         draft.riskState.employeeMorale = 0;
@@ -203,6 +214,7 @@ export class AssaultKeyPersonnelCommand implements Command {
 
     if (successRoll < successChance) {
       state.update((draft) => {
+        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - ASSAULT_KEY_PERSONNEL_COST;
         const competitors = (draft as any).competitorStates as CompetitorState[];
         const c = competitors.find((x) => x.id === this.competitorId);
         if (c) {
@@ -212,6 +224,9 @@ export class AssaultKeyPersonnelCommand implements Command {
       });
       events.emit('ASSAULT_SUCCESS', comp.name);
     } else {
+      state.update((draft) => {
+        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - ASSAULT_KEY_PERSONNEL_COST;
+      });
       events.emit('ASSAULT_FAILED', comp.name);
     }
   }
@@ -222,6 +237,11 @@ export class AssaultKeyPersonnelCommand implements Command {
 // 黑客窃取参数（极高风险）
 // ============================================================
 
+/** 黑客窃取参数单次成本（美元） */
+const HACK_PARAMETERS_COST = 15_000_000;
+/** BUG-9 修复：偷来的模型能力折扣（蒸馏损失） */
+const STOLEN_MODEL_CAPABILITY_DISCOUNT = 0.7;
+
 export class HackParametersCommand implements Command {
   constructor(private competitorId: string) {}
 
@@ -229,6 +249,13 @@ export class HackParametersCommand implements Command {
     const found = findComp(state, this.competitorId);
     if (!found) return;
     const { comp } = found;
+
+    // BUG-8 修复：黑客行动需要支付高额费用，检查资金
+    const funds = state.read().resources['funds'] ?? 0;
+    if (funds < HACK_PARAMETERS_COST) {
+      events.emit('HACK_REJECTED', `资金不足，需要 $${HACK_PARAMETERS_COST.toLocaleString()}`);
+      return;
+    }
 
     const successChance = 0.15 + comp.infiltrationLevel * 0.08;
     const exposureChance = 0.70 - comp.infiltrationLevel * 0.10;
@@ -238,6 +265,7 @@ export class HackParametersCommand implements Command {
 
     if (exposureRoll < exposureChance) {
       state.update((draft) => {
+        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - HACK_PARAMETERS_COST;
         draft.riskState.reputation = Math.max(0, draft.riskState.reputation - 80);
         draft.riskState.legalDebt = 15;
         draft.riskState.trustDebt = 10;
@@ -248,6 +276,12 @@ export class HackParametersCommand implements Command {
 
     if (successRoll < successChance) {
       state.update((draft) => {
+        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - HACK_PARAMETERS_COST;
+        // BUG-9 修复：偷来的模型能力打折扣（蒸馏损失），且标记 stolen 状态
+        const stolenScore = Math.max(...Object.values(comp.capabilities)) * STOLEN_MODEL_CAPABILITY_DISCOUNT;
+        const discountedCaps = Object.fromEntries(
+          Object.entries(comp.capabilities).map(([k, v]) => [k, v * STOLEN_MODEL_CAPABILITY_DISCOUNT]),
+        ) as any;
         const newModel = {
           id: `stolen-${comp.id}-${draft.date}`,
           name: `${comp.name} 参数泄漏版`,
@@ -257,9 +291,9 @@ export class HackParametersCommand implements Command {
           datasetId: 'leaked',
           completedAt: draft.date,
           trainingProjectId: '',
-          capabilities: { ...comp.capabilities } as any,
-          rawCapabilities: { ...comp.capabilities } as any,
-          baseScore: Math.max(...Object.values(comp.capabilities)),
+          capabilities: discountedCaps,
+          rawCapabilities: discountedCaps,
+          baseScore: stolenScore,
           daysSincePublished: 0,
           evaluationResearchers: 0,
           published: false,
@@ -272,6 +306,9 @@ export class HackParametersCommand implements Command {
       });
       events.emit('HACK_SUCCESS', comp.name);
     } else {
+      state.update((draft) => {
+        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - HACK_PARAMETERS_COST;
+      });
       events.emit('HACK_FAILED', comp.name);
     }
   }

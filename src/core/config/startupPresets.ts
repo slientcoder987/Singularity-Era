@@ -36,10 +36,10 @@ export const STARTUP_PRESETS: StartupPreset[] = [
   {
     id: 'bootstrapper',
     name: '自力更生',
-    description: '更多启动资金，少量算力和员工。适合稳健经营，先做数据服务再逐步扩张。',
-    bonusFunds: 4_000_000,
+    description: '少量启动资金 + 小规模算力。需尽快种子轮融资才能撑过训练期。',
+    bonusFunds: 2_000_000,
     cards: [
-      { modelId: 'compute_a100', count: 1 },
+      { modelId: 'compute_h100', count: 8 },
     ],
     employees: [
       { role: StaffRole.RESEARCHER, level: 3, count: 2 },
@@ -49,28 +49,30 @@ export const STARTUP_PRESETS: StartupPreset[] = [
   {
     id: 'balanced',
     name: '均衡起步',
-    description: '适中的资金、算力和人员配置。适合大多数策略，攻守兼备。',
-    bonusFunds: 1_000_000,
+    description: '32 卡 H100 集群 + 完整团队。启动资金有限，需种子轮/VC 融资支撑扩张。',
+    bonusFunds: 3_000_000,
     cards: [
-      { modelId: 'compute_a100', count: 2 },
+      { modelId: 'compute_h100', count: 32 },
     ],
     employees: [
-      { role: StaffRole.RESEARCHER, level: 3, count: 3 },
-      { role: StaffRole.DATA_ENGINEER, level: 2, count: 2 },
+      { role: StaffRole.RESEARCHER, level: 5, count: 3 },
+      { role: StaffRole.DATA_ENGINEER, level: 3, count: 2 },
+      { role: StaffRole.SYSTEM_ENGINEER, level: 3, count: 1 },
+      { role: StaffRole.PRODUCT_MANAGER, level: 3, count: 1 },
     ],
   },
   {
     id: 'tech_heavy',
     name: '技术驱动',
-    description: '最少资金但算力拉满，适合激进训练路线。风险高但模型迭代最快。',
-    bonusFunds: 0,
+    description: '算力拉满，精简团队。资金极度紧张，必须立即融资否则将面临现金流危机。',
+    bonusFunds: 1_000_000,
     cards: [
-      { modelId: 'compute_a100', count: 4 },
+      { modelId: 'compute_h100', count: 48 },
     ],
     employees: [
-      { role: StaffRole.RESEARCHER, level: 3, count: 3 },
-      { role: StaffRole.DATA_ENGINEER, level: 2, count: 1 },
-      { role: StaffRole.SYSTEM_ENGINEER, level: 2, count: 1 },
+      { role: StaffRole.RESEARCHER, level: 5, count: 4 },
+      { role: StaffRole.DATA_ENGINEER, level: 3, count: 1 },
+      { role: StaffRole.SYSTEM_ENGINEER, level: 3, count: 1 },
     ],
   },
 ];

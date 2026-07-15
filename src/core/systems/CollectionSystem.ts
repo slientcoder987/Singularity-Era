@@ -56,10 +56,8 @@ export class CollectionSystem implements System {
               emp.assignedProjectId = undefined;
             }
           }
-          // 归还普通工程师资源
-          const normalCount = Math.max(0, Math.round(
-            (project.dailyRate / route.baseRate - project.engineerIds.length * 1.5) / 1.0,
-          ));
+          // 归还普通工程师资源（设计-4：直接读取字段，不反推）
+          const normalCount = project.normalEngineerCount ?? 0;
           if (normalCount > 0) {
             const staffId = ROLE_TO_STAFF_RESOURCE[StaffRole.DATA_ENGINEER];
             draft.resources[staffId] = (draft.resources[staffId] ?? 0) + normalCount;
@@ -91,8 +89,22 @@ export class CollectionSystem implements System {
           );
         }
 
+        // 设计-17：质量随累计收集量增长（数据管道学习曲线效应）
+        // 对数增长：前期提升快，后期逐渐饱和至 qualityCap。
+        // 每 10 倍收集量约提升 0.05 质量，模拟"管道越用越精"的现实。
+        const oldCollected = project.collectedTokens;
+        const newCollected = oldCollected + tokensProduced;
+        const qualityGainFromScale =
+          (Math.log10(newCollected + 1) - Math.log10(oldCollected + 1)) * 0.05;
+        if (qualityGainFromScale > 0) {
+          project.currentQuality = Math.min(
+            route.qualityCap,
+            project.currentQuality + qualityGainFromScale,
+          );
+        }
+
         // 累计已收集
-        project.collectedTokens += tokensProduced;
+        project.collectedTokens = newCollected;
 
         completedProjects.push({
           projectId: project.id,

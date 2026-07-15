@@ -54,11 +54,20 @@ export class SetHeadquartersCommand implements Command {
       }
 
       // ===== 基础设施（固定） =====
+      // 计算需要的节点数（每节点 8 卡槽）
+      const totalCardCount = this.preset.cards.reduce((s, c) => s + c.count, 0);
+      const nodeCount = Math.max(1, Math.ceil(totalCardCount / 8));
+
+      const nodeIds: string[] = [];
+      for (let i = 0; i < nodeCount; i++) {
+        nodeIds.push(`node-initial-${i}`);
+      }
+
       draft.dataCenters = [{
         id: 'dc-initial',
         name: '初始数据中心',
         location: region.name,
-        maxPowerMW: 0.1,
+        maxPowerMW: Math.max(0.1, nodeCount * 0.05), // 按节点数扩展电力容量
         usedPowerMW: 0,
         coolingType: 'air',
         pue: 1.2,
@@ -75,7 +84,7 @@ export class SetHeadquartersCommand implements Command {
       draft.clusters = [{
         id: 'cluster-initial',
         name: '初始训练集群',
-        nodes: ['node-initial'],
+        nodes: nodeIds,
         network: 'InfiniBand HDR',
         switchCapacity: 200,
         networkBandwidth: 200,
@@ -96,11 +105,11 @@ export class SetHeadquartersCommand implements Command {
         createdAt: draft.date,
       }];
 
-      draft.serverNodes = [{
-        id: 'node-initial',
-        name: '初始训练节点',
+      draft.serverNodes = nodeIds.map((nid, i) => ({
+        id: nid,
+        name: `训练节点 ${i + 1}`,
         slotCount: 8,
-        installedCards: [],
+        installedCards: [] as string[],
         interconnect: 'NVLink3',
         interconnectBandwidth: 600,
         powerSupplyKW: 4,
@@ -108,13 +117,13 @@ export class SetHeadquartersCommand implements Command {
         nvswitchGeneration: 1,
         reliability: 95,
         baseReliability: 95,
-        nodeType: 'hgx',
+        nodeType: 'hgx' as const,
         cost: 80000,
         maintenanceCost: 100,
         clusterId: 'cluster-initial',
         builtAt: draft.date,
         lastMaintenanceDay: draft.date,
-      }];
+      }));
 
       // ===== 资金 =====
       const baseFunds = draft.resources['funds'] ?? 1_000_000;
@@ -122,7 +131,7 @@ export class SetHeadquartersCommand implements Command {
 
       // ===== 算力卡 + CardInstance =====
       let totalTFlops = 0;
-      const node = draft.serverNodes[0];
+      let cardIdx = 0;
       for (const card of this.preset.cards) {
         const spec = specMap.get(card.modelId);
         if (!spec) continue;
@@ -130,10 +139,11 @@ export class SetHeadquartersCommand implements Command {
         // 增加资源计数
         draft.resources[card.modelId] = (draft.resources[card.modelId] ?? 0) + card.count;
 
-        // 创建 CardInstance 并安装到节点
+        // 创建 CardInstance 并按顺序安装到节点
         const pool: CardInstance[] = (draft.resourceMeta[card.modelId] as CardInstance[]) ?? [];
         for (let i = 0; i < card.count; i++) {
-          const uid = `${card.modelId}-init-${i}`;
+          const targetNode = draft.serverNodes[cardIdx % nodeCount];
+          const uid = `${card.modelId}-init-${cardIdx}`;
           const inst: CardInstance = {
             uid,
             modelId: card.modelId,
@@ -141,11 +151,12 @@ export class SetHeadquartersCommand implements Command {
             age: 0,
             assignedProjectId: null,
             purchasedAt: 0,
-            location: 'node-initial',
+            location: targetNode.id,
           };
           pool.push(inst);
-          node.installedCards.push(uid);
+          targetNode.installedCards.push(uid);
           totalTFlops += spec.tflopsPerCard;
+          cardIdx++;
         }
         draft.resourceMeta[card.modelId] = pool;
       }
@@ -201,18 +212,9 @@ export class SetHeadquartersCommand implements Command {
 
       draft.employees = employees;
 
-      // 更新普通员工资源计数
-      const roleResourceMap: Record<StaffRole, string> = {
-        [StaffRole.RESEARCHER]: 'staff_researcher',
-        [StaffRole.DATA_ENGINEER]: 'staff_data_engineer',
-        [StaffRole.SYSTEM_ENGINEER]: 'staff_system_engineer',
-        [StaffRole.PRODUCT_MANAGER]: 'staff_product_manager',
-        [StaffRole.LEGAL_PR]: 'staff_legal_pr',
-      };
-      for (const empCfg of this.preset.employees) {
-        const resId = roleResourceMap[empCfg.role];
-        draft.resources[resId] = (draft.resources[resId] ?? 0) + empCfg.count;
-      }
+      // 注意：核心员工与普通员工（staff_* 资源）是两套独立体系。
+      // 此处不更新 staff_* 资源计数，避免凭空增加可分配的普通员工。
+      // 普通员工只能通过 HireNormalEmployeeCommand 招聘。
 
       // 自动将员工加入对应部门
       for (const emp of employees) {

@@ -27,13 +27,19 @@ export interface CloudProvider {
   maxRentalDays: number;
 }
 
-/** 匿名化云服务商列表 */
+/**
+ * 匿名化云服务商列表
+ *
+ * 设计 #3 修复：价格按真实 H100 租赁 ($2-4/h ≈ $48-96/day, 989 TFLOPS) 校准
+ * → 约 $0.05-0.10/TFLOPS·天
+ * 自建 H100 成本 ~$30k/卡，按 $79/day 回本约 380 天，云租贵约 2-3x
+ */
 export const CLOUD_PROVIDERS: CloudProvider[] = [
   {
     id: 'nimbus',
     name: 'Nimbus Cloud',
     description: '全球最大的云计算平台，GPU 实例丰富，覆盖最广',
-    basePricePerTFLOPSDay: 1.8,
+    basePricePerTFLOPSDay: 0.12,
     unitTFLOPS: 100,
     minRentalDays: 7,
     maxRentalDays: 365,
@@ -42,7 +48,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     id: 'stratus',
     name: 'Stratus AI',
     description: 'TPU 专精，训练优化出色，价格略低但供应有限',
-    basePricePerTFLOPSDay: 1.5,
+    basePricePerTFLOPSDay: 0.10,
     unitTFLOPS: 200,
     minRentalDays: 14,
     maxRentalDays: 180,
@@ -51,7 +57,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     id: 'cirrus',
     name: 'Cirrus Compute',
     description: '企业级混合云，GPU + FPGA 方案，价格较高',
-    basePricePerTFLOPSDay: 2.0,
+    basePricePerTFLOPSDay: 0.14,
     unitTFLOPS: 150,
     minRentalDays: 7,
     maxRentalDays: 365,
@@ -60,7 +66,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     id: 'nova',
     name: 'Nova Cloud',
     description: '新兴 AI 训练云，专注大模型训练，性价比高',
-    basePricePerTFLOPSDay: 1.2,
+    basePricePerTFLOPSDay: 0.07,
     unitTFLOPS: 50,
     minRentalDays: 30,
     maxRentalDays: 90,
@@ -69,7 +75,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     id: 'aurora',
     name: 'Aurora AI',
     description: '亚洲最大云平台，东亚地区供应充足，价格有竞争力',
-    basePricePerTFLOPSDay: 1.0,
+    basePricePerTFLOPSDay: 0.08,
     unitTFLOPS: 100,
     minRentalDays: 7,
     maxRentalDays: 365,
@@ -78,7 +84,7 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
     id: 'tenji',
     name: 'Tenji Compute',
     description: '亚太区云主力，新加坡/东京节点质量高',
-    basePricePerTFLOPSDay: 1.1,
+    basePricePerTFLOPSDay: 0.09,
     unitTFLOPS: 100,
     minRentalDays: 7,
     maxRentalDays: 180,

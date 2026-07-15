@@ -343,6 +343,8 @@ export class StartDataCollectionCommand implements Command {
         status: 'active',
         dailyRate,
         currentQuality,
+        // 设计-4：直接存储普通工程师数，停止时无需反推
+        normalEngineerCount: this.normalEngineerCount,
       };
       draft.dataCollectionProjects.push(project);
 
@@ -382,16 +384,8 @@ export class StopDataCollectionCommand implements Command {
       return;
     }
 
-    // 需要知道分配了多少普通工程师，但 DataCollectionProject 只存了核心工程师 ids
-    // 普通工程师数需从 dailyRate 反推
-    const route = COLLECTION_MAP[project.routeId as CollectionRouteId];
-    const coreCount = project.engineerIds.length;
-    let normalCount = 0;
-    if (route) {
-      // dailyRate = (normalCount × 1.0 + coreCount × 1.5) × baseRate
-      normalCount = Math.round((project.dailyRate / route.baseRate - coreCount * 1.5) / 1.0);
-      normalCount = Math.max(0, normalCount);
-    }
+    // 设计-4 修复：直接读取项目存储的 normalEngineerCount，不再依赖 dailyRate 反推
+    const normalCount = project.normalEngineerCount ?? 0;
 
     state.update((draft) => {
       const proj = draft.dataCollectionProjects.find((p) => p.id === this.projectId);

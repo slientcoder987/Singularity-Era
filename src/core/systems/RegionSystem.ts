@@ -36,11 +36,11 @@ export class RegionSystem implements System {
     // 这里额外处理利润部分的税率：如果日收入超过电力成本，差额部分缴税
     if (current.operations && current.operations.dailyRevenue > 0) {
       const ops = current.operations;
-      // 估算日电力成本（从上次维护系统计算中估算）
-      const estimatedPowerCost = current.dataCenters.reduce((sum, dc) => {
-        const dailyKWh = dc.maxPowerMW * 1000 * dc.currentPue * 24 * modifiers.energyMultiplier;
-        return sum + dailyKWh * dc.powerCostPerKWh;
-      }, 0);
+      // 设计-2 修复：直接读取 PowerSystem / InfraMaintenanceSystem 当日实扣的电力成本，
+      // 避免重新估算与实际扣费不一致导致税基偏差（消除电力成本双重估算）。
+      // 若 lastDayPowerCostDate 不是今日（例如系统未运行），回退到 0。
+      const estimatedPowerCost =
+        current.lastDayPowerCostDate === current.date ? current.lastDayPowerCost : 0;
 
       // 仅对超出运营成本的利润收税
       const totalNonPowerCost =
@@ -48,7 +48,9 @@ export class RegionSystem implements System {
         current.clusters.reduce((s, c) => s + c.operationalCostPerDay + c.storageCostPerDay, 0) +
         current.dataCenters.reduce((s, dc) => s + dc.maintenanceCostPerDay, 0);
 
-      const dailyProfit = Math.max(0, ops.dailyRevenue - estimatedPowerCost - totalNonPowerCost);
+      // 设计-7 修复：Token 收入也纳入利润税基，避免通过 Token 售卖规避全部利润税
+      const totalDailyRevenue = ops.dailyRevenue + (ops.tokenRevenue ?? 0);
+      const dailyProfit = Math.max(0, totalDailyRevenue - estimatedPowerCost - totalNonPowerCost);
       const taxAmount = dailyProfit * modifiers.taxRate;
 
       if (taxAmount > 0) {

@@ -91,7 +91,7 @@ export class ComputeHardwareSystem implements System {
         tfopsReleased += contract.tflops;
       }
       state.update((draft) => {
-        draft.resources['compute_power'] = Math.max(0, (draft.resources['compute_power'] ?? 0) - tfopsReleased);
+        // 设计-3 修复：云算力不再写入 compute_power，到期时也无需扣减。
         const activeContracts = (draft.resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
         draft.resourceMeta['cloud_rental_contracts'] = activeContracts.filter((c) => c.expiresAt > today);
       });

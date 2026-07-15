@@ -2,6 +2,7 @@ import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { formatGameDate, formatResourceValue } from '../../core/utils';
 import { REGION_MAP } from '../../core/config/regions';
+import { getActiveCloudTFLOPS } from '../../core/utils/cloudComputeUtils';
 import styles from '../styles/App.module.css';
 
 /**
@@ -22,6 +23,9 @@ export function TopBar() {
 
   const topBarResources = game.registry.getTopBarResources();
   // funds, compute_power, power_kw
+
+  // 设计-8：云算力独立显示，让玩家直观感知租赁状态
+  const cloudComputePower = useGameState((s) => getActiveCloudTFLOPS(s));
 
   // 计算员工总数：核心员工 + 普通员工（human 类别资源之和）
   const humanResources = game.registry.getByCategory('human');
@@ -46,6 +50,10 @@ export function TopBar() {
         {topBarResources.map((def) => {
           const value = resources[def.id] ?? 0;
           const format = def.uiConfig?.format;
+          // 设计-8：在算力项后追加云算力提示（仅当有云算力时）
+          const cloudSuffix = def.id === 'compute_power' && cloudComputePower > 0
+            ? ` (+${formatResourceValue(cloudComputePower, format)} 云)`
+            : '';
           return (
             <div key={def.id} className={styles.statGroup}>
               <div className={styles.statDivider} />
@@ -58,7 +66,7 @@ export function TopBar() {
                   className={styles.statValue}
                   style={def.uiConfig?.color ? { color: def.uiConfig.color } : undefined}
                 >
-                  {formatResourceValue(value, format)}
+                  {formatResourceValue(value, format)}{cloudSuffix}
                 </span>
               </div>
             </div>

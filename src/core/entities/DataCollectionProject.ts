@@ -17,4 +17,9 @@ export interface DataCollectionProject {
   dailyRate: number;
   /** 当前有效质量 0-1 */
   currentQuality: number;
+  /**
+   * 分配的普通数据工程师数量（设计-4 修复）。
+   * 停止收集时直接归还此数量，避免依赖 dailyRate/baseRate 反推导致公式变更后归还错误数量。
+   */
+  normalEngineerCount: number;
 }

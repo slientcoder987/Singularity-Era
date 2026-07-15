@@ -28,9 +28,12 @@ export class TechResearchSystem implements System {
       if (isCompleted) {
         const techId = draft.researchingTech.techId;
         const completedTech = TECH_MAP[techId];
-        draft.unlockedTechs.push(techId);
-        if (completedTech) {
-          draft.activeTechEffects.push(completedTech.effect);
+        // BUG-10 修复：防止重复解锁同一技术导致效果叠加
+        if (!draft.unlockedTechs.includes(techId)) {
+          draft.unlockedTechs.push(techId);
+          if (completedTech) {
+            draft.activeTechEffects.push(completedTech.effect);
+          }
         }
         draft.researchingTech = null;
       } else {

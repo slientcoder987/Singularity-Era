@@ -17,6 +17,7 @@ import {
   InfiltrateCorpCommand,
 } from '../../core/commands/HostileCommands';
 import { calcValuation } from '../../core/utils/marketCalc';
+import { getActiveCloudTFLOPS } from '../../core/utils/cloudComputeUtils';
 import { REGION_MAP, LANGUAGE_NAMES, getRegionsByContinent } from '../../core/config/regions';
 import styles from '../styles/App.module.css';
 
@@ -194,13 +195,17 @@ function CompetitiveTab({ game }: { game: ReturnType<typeof useGame> }) {
       <div className={styles.devRow}>
         <span className={styles.devRowLabel} style={{ marginTop: '12px' }}>最新情报</span>
       </div>
-      {competitorStates.flatMap((c: any) => c.intel).slice(-10).reverse().map((intel: any) => (
-        <div key={intel.id} className={styles.devRow}>
-          <span className={styles.devHint} style={{ color: intel.severity === 'critical' ? '#ff6b6b' : intel.severity === 'warning' ? '#f0ad4e' : '#888' }}>
-            [{intel.day}天] {intel.title}: {intel.description}
-          </span>
-        </div>
-      ))}
+      {competitorStates
+        .flatMap((c: any) => c.intel.map((i: any) => ({ ...i, source: c.name })))
+        .sort((a: any, b: any) => b.day - a.day)
+        .slice(0, 20)
+        .map((intel: any) => (
+          <div key={intel.id} className={styles.devRow}>
+            <span className={styles.devHint} style={{ color: intel.severity === 'critical' ? '#ff6b6b' : intel.severity === 'warning' ? '#f0ad4e' : '#888' }}>
+              [{intel.day}天] [{intel.source}] {intel.title}: {intel.description}
+            </span>
+          </div>
+        ))}
       {!competitorStates.some((c: any) => c.intel.length > 0) && (
         <div className={styles.emptyHint}>暂无情报 · 渗透竞争对手以获得研发动态</div>
       )}
@@ -380,11 +385,35 @@ function FundingTab({ game }: { game: ReturnType<typeof useGame> }) {
   const ops = useGameState((s) => s.operations);
   const hqId = useGameState((s) => s.headquartersRegionId);
   const fundingRounds = useGameState((s) => s.fundingRounds);
+  const trainingProjects = useGameState((s) => s.trainingProjects);
+  const employees = useGameState((s) => s.employees);
+  const computePower = useGameState((s) => s.resources['compute_power'] ?? 0);
+  // 设计-3：云算力独立显示，避免与本地卡混淆
+  const cloudComputePower = useGameState((s) => getActiveCloudTFLOPS(s));
+  const totalComputePower = computePower + cloudComputePower;
   const missions = ops?.boardMissions ?? [];
 
-  const bestCap = models.length > 0 ? Math.max(...models.map((m) => m.baseScore)) : 0;
+  // ★ 设计 #8：估值考虑训练进度、算力、团队（前期收入为 0 也能合理估值）
+  const publishedModels = models.filter((m) => m.published);
+  const bestCap = publishedModels.length > 0 ? Math.max(...publishedModels.map((m) => m.baseScore)) : 0;
   const annualRevenue = (ops?.dailyRevenue ?? 0) * 365;
-  const valuation = calcValuation(annualRevenue, bestCap, hqId);
+  const valuation = calcValuation({
+    annualRevenue,
+    bestCapability: bestCap,
+    headquartersRegionId: hqId,
+    trainingProjects: trainingProjects.map((p) => ({
+      computeTotal: p.computeTotal,
+      computeRemaining: p.computeRemaining,
+      paramCount: p.paramCount,
+    })),
+    totalComputeTFLOPS: totalComputePower,
+    employeeCount: employees.length,
+  });
+
+  // 训练管线总进度（用于显示）
+  const totalProgress = trainingProjects.length > 0
+    ? trainingProjects.reduce((s, p) => s + (p.computeTotal > 0 ? 1 - p.computeRemaining / p.computeTotal : 0), 0) / trainingProjects.length
+    : 0;
 
   return (
     <div className={styles.tabBody}>
@@ -397,7 +426,7 @@ function FundingTab({ game }: { game: ReturnType<typeof useGame> }) {
           ${valuation.toFixed(1)}M
         </span>
         <span className={styles.devHint}>
-          基础 $100M × 收入 {(1 + annualRevenue / 10).toFixed(2)}× × 能力 {(1 + bestCap / 1000).toFixed(2)}×
+          基础 $50M × 收入 {(1 + annualRevenue / 10).toFixed(2)}× · 模型 {(1 + bestCap / 1000).toFixed(2)}× · 训练进度 {(totalProgress * 100).toFixed(0)}% · 算力 {totalComputePower} TFLOPS（本地 {computePower} + 云 {cloudComputePower}） · 团队 {employees.length}人
         </span>
       </div>
 
@@ -420,6 +449,19 @@ function FundingTab({ game }: { game: ReturnType<typeof useGame> }) {
       {/* 融资操作 */}
       <div className={styles.devRow}>
         <span className={styles.devRowLabel} style={{ marginTop: '12px' }}>新一轮融资</span>
+      </div>
+
+      {/* ★ 设计 #8：种子轮 — 前期主要资金来源 */}
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+          种子轮: 天使投资人
+        </span>
+        <span className={styles.devHint}>${(valuation * 0.05).toFixed(1)}M · 无对赌 · 快速到账 · 适合前期</span>
+        <button className={styles.btn} onClick={() => game.executeCommand(new RaiseFundingCommand({
+          type: 'seed',
+          investorName: '天使投资人',
+          terms: { boardSeats: 1 },
+        }))}>融资</button>
       </div>
 
       {/* 战略投资 */}

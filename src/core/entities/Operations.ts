@@ -1,7 +1,7 @@
 /**
  * 融资轮次实体
  */
-export type FundingType = 'strategic' | 'venture_capital' | 'government' | 'ipo';
+export type FundingType = 'seed' | 'strategic' | 'venture_capital' | 'government' | 'ipo';
 
 export interface FundingRound {
   id: string;
@@ -50,6 +50,8 @@ export interface FundingTerms {
   ipoPrice?: number;
   /** 被做空概率（日） */
   shortSellRisk?: number;
+  /** 流通股数（设计-15：用于增发/回购计算） */
+  sharesOutstanding?: number;
 
   // ---- 通用 ----
   /** 董事会新增席位 */

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
-import { StartTrainingCommand, CancelTrainingCommand } from '../../core/commands/TrainingCommands';
+import { StartTrainingCommand, CancelTrainingCommand, ReallocateTrainingCardsCommand } from '../../core/commands/TrainingCommands';
+import { PublishModelCommand } from '../../core/commands/PublishModelCommand';
 import {
   AcquireDataCommand,
   SynthesizeDataCommand,
@@ -294,6 +295,21 @@ function TrainingTab() {
                     {progress.toFixed(1)}% · 剩余 {p.computeRemaining.toFixed(0)} TFLOPS·天
                     {p.lostFlops > 0 && ` · 损失 ${p.lostFlops.toFixed(0)}`}
                   </span>
+                  {/* 设计-9：运行中动态调整算力，无需取消重训 */}
+                  <button
+                    className={styles.btn}
+                    title="从同一集群追加空闲在线卡"
+                    onClick={() => game.executeCommand(new ReallocateTrainingCardsCommand(p.id, 1))}
+                  >
+                    +卡
+                  </button>
+                  <button
+                    className={styles.btn}
+                    title="释放部分已分配卡（至少保留 1 张）"
+                    onClick={() => game.executeCommand(new ReallocateTrainingCardsCommand(p.id, -1))}
+                  >
+                    -卡
+                  </button>
                   <button
                     className={styles.btn}
                     onClick={() => game.executeCommand(new CancelTrainingCommand(p.id))}
@@ -368,6 +384,21 @@ function TrainingTab() {
               <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
                 · {p.modelName} ({p.pauseReason})
               </span>
+              {/* 设计-9：暂停时也可调整算力，便于恢复前补卡 */}
+              <button
+                className={styles.btn}
+                title="从同一集群追加空闲在线卡"
+                onClick={() => game.executeCommand(new ReallocateTrainingCardsCommand(p.id, 1))}
+              >
+                +卡
+              </button>
+              <button
+                className={styles.btn}
+                title="释放部分已分配卡（至少保留 1 张）"
+                onClick={() => game.executeCommand(new ReallocateTrainingCardsCommand(p.id, -1))}
+              >
+                -卡
+              </button>
               <button
                 className={styles.btn}
                 onClick={() => game.executeCommand(new CancelTrainingCommand(p.id))}
@@ -439,6 +470,7 @@ function LossSparkline({
 
 function ModelsTab() {
   const models = useGameState((s) => s.models);
+  const game = useGame();
   const [selectedModelId, setSelectedModelId] = useState<string>('');
 
   if (models.length === 0) {
@@ -446,11 +478,12 @@ function ModelsTab() {
   }
 
   const selectedModel = models.find((m) => m.id === selectedModelId) ?? models[models.length - 1];
+  const publishedCount = models.filter((m) => m.published).length;
 
   return (
     <div className={styles.tabBody}>
       <div className={styles.devRow}>
-        <span className={styles.devRowLabel}>模型列表 ({models.length})</span>
+        <span className={styles.devRowLabel}>模型列表 ({models.length} · 已发布 {publishedCount})</span>
         <select
           className={styles.select}
           value={selectedModelId}
@@ -459,13 +492,38 @@ function ModelsTab() {
           <option value="">选择模型...</option>
           {models.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.name} ({m.paramCount}B · 第{m.completedAt}天)
+              {m.name} ({m.paramCount}B · 第{m.completedAt}天){m.published ? ' ✓已发布' : ' ⏳未发布'}
             </option>
           ))}
         </select>
       </div>
 
-      {selectedModel && <ModelDetail model={selectedModel} />}
+      {selectedModel && (
+        <>
+          <ModelDetail model={selectedModel} />
+          {/* ★ 设计 #5：发布按钮 */}
+          <div className={styles.devRow} style={{ marginTop: '8px' }}>
+            <span className={styles.devRowLabel}>市场发布</span>
+            {selectedModel.published ? (
+              <span className={styles.devHint} style={{ color: '#5cb85c' }}>
+                ✓ 已发布（第 {selectedModel.daysSincePublished} 天）· 正在产生市场收入与 Token 收入
+              </span>
+            ) : (
+              <>
+                <span className={styles.devHint} style={{ color: '#ff9800' }}>
+                  未发布 · 训练完成但未上线，无法产生市场收入
+                </span>
+                <button
+                  className={styles.btn}
+                  onClick={() => game.executeCommand(new PublishModelCommand(selectedModel.id))}
+                >
+                  发布到市场
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -479,7 +537,7 @@ function ModelDetail({ model }: { model: Model }) {
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>{model.name}</span>
         <span className={styles.devHint}>
-          {model.paramCount}B · {model.architecture} · ctx {model.contextLength} · 基础分 {model.baseScore.toFixed(1)}
+          {model.paramCount}B · {model.architecture} · ctx {model.contextLength} · 基础分 {model.baseScore.toFixed(1)} · {model.published ? '已发布' : '未发布'}
         </span>
       </div>
 

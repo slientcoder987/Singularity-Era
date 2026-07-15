@@ -84,13 +84,6 @@ export class RiskSystem implements System {
 
           emittedEvents.push({ name: evt.name, effects: evt.effects, id: evt.id, severity: evt.severity });
         }
-
-        // ★ 法务公关每日降低法律和信任风险
-        const legalReduction = getStaffLegalRiskReductionPerDay(draft);
-        if (legalReduction > 0) {
-          draft.riskState.legalDebt = Math.max(0, draft.riskState.legalDebt - legalReduction * deltaDays);
-          draft.riskState.trustDebt = Math.max(0, draft.riskState.trustDebt - legalReduction * 0.5 * deltaDays);
-        }
       });
 
       // 在 state.update 完成后再触发事件，确保监听器读到最新状态
@@ -98,6 +91,15 @@ export class RiskSystem implements System {
         events.emit('RISK_EVENT', { id: evt.id, name: evt.name, effects: evt.effects, severity: evt.severity });
       }
     }
+
+    // ★ Bug #2 修复：法务公关每日降低法律和信任风险（无论是否有风险事件触发）
+    state.update((draft) => {
+      const legalReduction = getStaffLegalRiskReductionPerDay(draft);
+      if (legalReduction > 0) {
+        draft.riskState.legalDebt = Math.max(0, draft.riskState.legalDebt - legalReduction * deltaDays);
+        draft.riskState.trustDebt = Math.max(0, draft.riskState.trustDebt - legalReduction * 0.5 * deltaDays);
+      }
+    });
 
     // 3. 训练崩溃检查（针对每个训练中项目）
     // 统一通过 reduce_training_crash_risk 技术效果减免，不在 calcTrainingCrashProbability 内重复应用

@@ -108,7 +108,43 @@ export class Game {
   /** 从 JSON 字符串读取存档并替换当前状态 */
   load(json: string): void {
     const parsed = JSON.parse(json) as GameData;
+    // BUG-15 修复：旧存档迁移——为 DataCollectionProject 补 normalEngineerCount 字段
+    this.migrateOldData(parsed);
     this.state.resetData(parsed);
     this.loop.setSpeed(parsed.speed);
+  }
+
+  /**
+   * 旧存档数据迁移。
+   * 当前迁移：
+   * - DataCollectionProject.normalEngineerCount（设计-4 引入）
+   * - FundingRound.terms.sharesOutstanding（设计-15 引入）
+   */
+  private migrateOldData(data: GameData): void {
+    if (Array.isArray(data.dataCollectionProjects)) {
+      // 延迟导入避免循环依赖
+      const { COLLECTION_MAP } = require('./config/dataAcquisition');
+      for (const proj of data.dataCollectionProjects) {
+        if (proj.normalEngineerCount === undefined) {
+          const route = COLLECTION_MAP[proj.routeId];
+          // 使用历史反推公式计算迁移值
+          proj.normalEngineerCount = route
+            ? Math.max(0, Math.round(proj.dailyRate / route.baseRate - proj.engineerIds.length * 1.5))
+            : 0;
+        }
+      }
+    }
+    // 设计-15 迁移：为已 IPO 的旧存档补算 sharesOutstanding
+    if (Array.isArray(data.fundingRounds)) {
+      for (const round of data.fundingRounds) {
+        if (round.type === 'ipo' && round.terms.sharesOutstanding === undefined) {
+          const price = round.terms.ipoPrice ?? round.terms.stockPrice;
+          if (price && price > 0) {
+            // 反推：流通股 = 融资金额(美元) / 发行价
+            round.terms.sharesOutstanding = Math.round((round.amount * 1_000_000) / price);
+          }
+        }
+      }
+    }
   }
 }

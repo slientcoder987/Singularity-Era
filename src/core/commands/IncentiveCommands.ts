@@ -88,6 +88,17 @@ export class GrantEquityCommand implements Command {
       return;
     }
 
+    // BUG-17 修复：全公司月度授股权配额（30 天内最多 3 人），防止批量授股权瞬间拉满忠诚度
+    const recentEquityGrants = current.employees.filter(
+      (e) => e.hasEquity && e.equityGrantedDay !== undefined && current.date - e.equityGrantedDay < 30,
+    ).length;
+    if (recentEquityGrants >= 3) {
+      events.emit('EQUITY_REJECTED', {
+        reason: `本月授股权配额已用尽（30 天内最多 3 人），请等待 ${30 - (current.date - (Math.min(...current.employees.filter(e => e.hasEquity && e.equityGrantedDay !== undefined).map(e => e.equityGrantedDay!))))} 天`,
+      });
+      return;
+    }
+
     // 冷却：上次奖金日之后 EQUITY_COOLDOWN_DAYS 天才能授予股权
     // 实际冷却以员工 lastBonusDay 为参考，避免短期内重复激励
     const lastBonus = emp.lastBonusDay ?? -999;

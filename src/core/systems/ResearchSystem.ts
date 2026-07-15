@@ -74,10 +74,8 @@ export class ResearchSystem implements System {
         }
       }
 
-      // 员工士气自然恢复（每日 +0.1，上限 100）
-      if (draft.riskState.employeeMorale < 100) {
-        draft.riskState.employeeMorale = Math.min(100, draft.riskState.employeeMorale + 0.1 * deltaDays);
-      }
+      // 设计-12 修复：员工士气自然恢复移至 StaffSystem（最后一个系统），
+      // 与 OperationsSystem/RiskSystem 的事件冲击分离，避免同日混合导致士气曲线难以理解。
 
       // 信任债务缓慢自然衰减（每日 -0.05）
       if (draft.riskState.trustDebt > 0) {

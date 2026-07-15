@@ -8,10 +8,8 @@ import type { CompetitorState } from '../entities/Competitor';
 import { COMPETITOR_TEMPLATES } from '../entities/Competitor';
 import { REGION_MAP, type RegionId } from '../config/regions';
 
-/** 将模板转换为轻量竞争信息（兼容 marketCalc） */
-function getActiveCompetitors(
-  competitorStates?: CompetitorState[],
-): CompetitorState[] {
+/** 获取活跃竞争对手列表（优先使用实际状态） */
+function getActiveCompetitors(competitorStates?: CompetitorState[]): CompetitorState[] {
   if (competitorStates && competitorStates.length > 0) return competitorStates;
   // 降级：使用预设模板
   return COMPETITOR_TEMPLATES.map((t) => ({
@@ -27,6 +25,14 @@ function getActiveCompetitors(
     releasedLastMonth: false,
     currentProject: '下一代大语言模型',
   }));
+}
+
+/** 当前竞争对手状态缓存（由 CompetitorSystem 每日更新） */
+let currentCompetitorStates: CompetitorState[] = [];
+
+/** 由 CompetitorSystem 调用，更新市场计算可访问的竞争对手状态 */
+export function updateCompetitorStates(states: CompetitorState[]): void {
+  currentCompetitorStates = states;
 }
 
 // ============================================================
@@ -198,8 +204,8 @@ export function calcRegionMarket(
   let playerWeightedScore = 0;
   let competitorWeightedScores: { name: string; score: number; share: number }[] = [];
 
-  // 计算该地区活跃竞争者
-  const activeCompetitors = getActiveCompetitors().filter((c) =>
+  // 计算该地区活跃竞争者（使用实际状态）
+  const activeCompetitors = getActiveCompetitors(currentCompetitorStates).filter((c) =>
     c.operatingRegions.includes(regionId),
   );
 
@@ -286,20 +292,80 @@ export function calcTotalRevenue(
 // 公司估值
 // ============================================================
 
-export function calcValuation(
-  annualRevenue: number,
-  bestCapability: number,
-  headquartersRegionId: string | null,
-): number {
-  const baseValuation = 100; // $100M 基础
-  const revenueMultiple = 1 + annualRevenue / 10;
-  const capabilityPremium = 1 + bestCapability / 1000;
-  const region = headquartersRegionId ? REGION_MAP[headquartersRegionId] : null;
-  const regionPremium = region
-    ? 1 + (region.gdpPerCapita / 100000) * 0.5 // 高GDP地区溢价
+/** 估值输入参数（设计 #8：前期主要靠融资，估值应反映"潜力"而非仅收入） */
+export interface ValuationInput {
+  /** 年收入（百万美元） */
+  annualRevenue: number;
+  /** 已发布模型的最佳能力分 */
+  bestCapability: number;
+  /** 总部地区 id */
+  headquartersRegionId: string | null;
+  /** 训练项目列表（含进度） */
+  trainingProjects?: Array<{ computeTotal: number; computeRemaining: number; paramCount: number }>;
+  /** 算力卡总 TFLOPS（resources['compute_power']） */
+  totalComputeTFLOPS?: number;
+  /** 员工总数 */
+  employeeCount?: number;
+}
+
+/**
+ * 计算公司估值（百万美元）
+ *
+ * ★ 设计 #8：前期主要靠融资
+ *
+ * 现实中 AI 初创公司估值主要基于：
+ * 1. 已发布模型能力（capabilityPremium）
+ * 2. 训练管线进度（trainingPipelinePremium）— 训练中的项目也是资产
+ * 3. 算力规模（computePremium）— 反映公司硬实力
+ * 4. 团队规模（teamPremium）— 人才是核心资产
+ * 5. 年收入（revenueMultiple）— 后期才重要
+ * 6. 地区溢价（regionPremium）— 高 GDP 地区融资环境好
+ *
+ * 前期收入为 0 时，估值仍可基于训练进度和算力规模达到合理水平，
+ * 让玩家可以通过种子轮/VC 融资获得扩张资金。
+ */
+export function calcValuation(input: ValuationInput): number {
+  const baseValuation = 50; // $50M 基础（降低，避免前期估值虚高）
+  const revenueMultiple = 1 + input.annualRevenue / 10;
+  const capabilityPremium = 1 + input.bestCapability / 1000;
+
+  // 训练管线溢价：每个训练项目按进度贡献，参数量越大溢价越高
+  let trainingPipelinePremium = 1.0;
+  if (input.trainingProjects && input.trainingProjects.length > 0) {
+    let pipelineBonus = 0;
+    for (const proj of input.trainingProjects) {
+      const progress = proj.computeTotal > 0
+        ? Math.max(0, 1 - proj.computeRemaining / proj.computeTotal)
+        : 0;
+      // 70B 模型满进度贡献 +30%，按进度线性
+      const projBonus = (proj.paramCount / 70) * 0.3 * progress;
+      pipelineBonus += projBonus;
+    }
+    trainingPipelinePremium = 1 + Math.min(0.8, pipelineBonus); // 上限 +80%
+  }
+
+  // 算力规模溢价：每 1000 TFLOPS 贡献 +5%，上限 +50%
+  const computePremium = input.totalComputeTFLOPS !== undefined
+    ? 1 + Math.min(0.5, input.totalComputeTFLOPS / 1000 * 0.05)
     : 1.0;
 
-  return baseValuation * revenueMultiple * capabilityPremium * regionPremium;
+  // 团队规模溢价：每人 +1%，上限 +30%
+  const teamPremium = input.employeeCount !== undefined
+    ? 1 + Math.min(0.3, input.employeeCount * 0.01)
+    : 1.0;
+
+  const region = input.headquartersRegionId ? REGION_MAP[input.headquartersRegionId] : null;
+  const regionPremium = region
+    ? 1 + (region.gdpPerCapita / 100000) * 0.5
+    : 1.0;
+
+  return baseValuation
+    * revenueMultiple
+    * capabilityPremium
+    * trainingPipelinePremium
+    * computePremium
+    * teamPremium
+    * regionPremium;
 }
 
 // ============================================================
@@ -313,14 +379,18 @@ export function calcUserChurn(
   const baseChurn = 0.0007; // ~2% 月流失 / 30天
   const deceptionPenalty = 0.01 * downgradeLevel;
 
-  // 竞争者影响
-  const avgCompCap = getActiveCompetitors().reduce((s, c) => {
-    const max = Math.max(...Object.values(c.capabilities));
-    return s + max;
-  }, 0) / getActiveCompetitors().length;
+  // 竞争者影响（使用实际状态）
+  const comps = getActiveCompetitors(currentCompetitorStates);
+  const avgCompCap = comps.length > 0
+    ? comps.reduce((s, c) => {
+        const max = Math.max(...Object.values(c.capabilities));
+        return s + max;
+      }, 0) / comps.length
+    : 500;
 
+  // BUG-3 修复：clamp 上限 5%，防止 ourBestCap 极小时出现 >100% 流失率
   const competitorDefection = ourBestCap > 0
-    ? Math.max(0, 0.005 * (avgCompCap - ourBestCap) / ourBestCap)
+    ? Math.min(0.05, Math.max(0, 0.005 * (avgCompCap - ourBestCap) / ourBestCap))
     : 0.01;
 
   return baseChurn + deceptionPenalty + competitorDefection;

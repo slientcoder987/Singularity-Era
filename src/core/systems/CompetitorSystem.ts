@@ -3,6 +3,7 @@ import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { CompetitorState, CompetitorIntel } from '../entities/Competitor';
 import { COMPETITOR_TEMPLATES } from '../entities/Competitor';
+import { updateCompetitorStates } from '../utils/marketCalc';
 
 /** 生成唯一 id */
 function genId(prefix: string): string {
@@ -11,6 +12,15 @@ function genId(prefix: string): string {
 
 /** 每 X 天执行一次竞争对手模拟 */
 const COMPETITOR_TICK_DAYS = 7;
+
+/**
+ * 设计-14：资金归零累计达到此天数后竞争对手破产退出市场。
+ * 21 天 = 3 个 tick，给竞争对手充分的融资缓冲机会。
+ */
+const BANKRUPT_THRESHOLD_DAYS = 21;
+
+/** 市场最少保留的竞争对手数量，避免游戏后期失去竞争 */
+const MIN_ACTIVE_COMPETITORS = 2;
 
 /** 资金事件模板 */
 const FUNDING_EVENTS = [
@@ -30,20 +40,30 @@ const SCANDAL_EVENTS = [
   { title: '虚假宣传调查', desc: '监管机构对其基准测试声明展开调查', fundsLoss: 150, repLoss: 20 },
 ];
 
+/**
+ * CompetitorSystem
+ *
+ * 设计-5 / BUG-4 修复：系统改为无状态。
+ * - 所有竞争对手状态完全由 GameState.competitorStates 承载，参与存档/读档。
+ * - 每次 update 从 state 读取工作集（深拷贝避免污染 immer 冻结对象），
+ *   模拟后整体写回 state。
+ * - 删除私有 this.competitors，避免内存状态与存档不同步导致读档后进度丢失。
+ */
 export class CompetitorSystem implements System {
   name = 'CompetitorSystem';
 
-  /** 初始化的竞争对手实例 */
-  private competitors: CompetitorState[] = [];
-  private initialized = false;
-
   update(state: GameState, events: EventBus, _deltaDays: number): void {
-    const current = state.read();
+    let current = state.read();
 
-    // 初始化
-    if (!this.initialized) {
-      this.competitors = COMPETITOR_TEMPLATES.map((t) => ({
+    // 初始化（仅当 state 中尚无竞争对手时）
+    let competitors: CompetitorState[];
+    const needsInit = !current.competitorStates || current.competitorStates.length === 0;
+    if (needsInit) {
+      competitors = COMPETITOR_TEMPLATES.map((t) => ({
         ...t,
+        capabilities: { ...t.capabilities },
+        operatingRegions: [...t.operatingRegions],
+        regionQualityMultiplier: { ...t.regionQualityMultiplier },
         funds: 1000 + Math.random() * 5000,
         computeUnits: 2000 + Math.random() * 15000,
         headcount: 100 + Math.random() * 2000,
@@ -55,10 +75,9 @@ export class CompetitorSystem implements System {
         releasedLastMonth: false,
         currentProject: '下一代大语言模型',
       }));
-      this.initialized = true;
 
       // 预置初始模型发布
-      for (const comp of this.competitors) {
+      for (const comp of competitors) {
         const score = Math.max(...Object.values(comp.capabilities));
         comp.releasedModels.push({
           name: `${comp.name}-1`,
@@ -67,12 +86,50 @@ export class CompetitorSystem implements System {
           day: -90,
         });
       }
+
+      // BUG-12 修复：初始化后立即写回，但不 return——
+      // 继续执行同日首次模拟，避免在非 tick 日初始化时竞争对手停滞到下一个 tick。
+      state.update((draft) => {
+        draft.competitorStates = competitors.map((c) => ({
+          ...c,
+          capabilities: { ...c.capabilities },
+          operatingRegions: [...c.operatingRegions],
+          regionQualityMultiplier: { ...c.regionQualityMultiplier },
+          releasedModels: c.releasedModels.map((m) => ({ ...m })),
+          intel: c.intel.map((i) => ({ ...i })),
+        }));
+      });
+      updateCompetitorStates(competitors);
+
+      // 初始化日不进行模拟（首次 tick 在下一个 COMPETITOR_TICK_DAYS 倍数日）
+      // 但要确保不会因非 tick 日初始化而错过当日应执行的模拟
+      if (current.date % COMPETITOR_TICK_DAYS !== 0) return;
+      // 若初始化日恰好是 tick 日，继续往下执行模拟
+      current = state.read();
+      competitors = current.competitorStates.map((c) => ({
+        ...c,
+        capabilities: { ...c.capabilities },
+        operatingRegions: [...c.operatingRegions],
+        regionQualityMultiplier: { ...c.regionQualityMultiplier },
+        releasedModels: c.releasedModels.map((m) => ({ ...m })),
+        intel: c.intel.map((i) => ({ ...i })),
+      }));
+    } else {
+      // 只每 COMPETITOR_TICK_DAYS 执行一次
+      if (current.date % COMPETITOR_TICK_DAYS !== 0) return;
+
+      // 从 state 读取深拷贝工作集
+      competitors = current.competitorStates.map((c) => ({
+        ...c,
+        capabilities: { ...c.capabilities },
+        operatingRegions: [...c.operatingRegions],
+        regionQualityMultiplier: { ...c.regionQualityMultiplier },
+        releasedModels: c.releasedModels.map((m) => ({ ...m })),
+        intel: c.intel.map((i) => ({ ...i })),
+      }));
     }
 
-    // 只每 COMPETITOR_TICK_DAYS 执行一次
-    if (current.date % COMPETITOR_TICK_DAYS !== 0) return;
-
-    for (const comp of this.competitors) {
+    for (const comp of competitors) {
       this.simulateCompetitor(comp, current.date, events);
     }
 
@@ -80,9 +137,8 @@ export class CompetitorSystem implements System {
     const playerBestCap = current.models.length > 0
       ? Math.max(...current.models.map((m) => m.baseScore))
       : 0;
-    for (const comp of this.competitors) {
+    for (const comp of competitors) {
       const compBestCap = Math.max(...Object.values(comp.capabilities));
-      // 玩家领先显著 → 竞争对手加快训练
       if (playerBestCap > compBestCap * 1.2) {
         comp.trainingProgress = Math.min(100, comp.trainingProgress + 3);
         if (comp.infiltrationLevel > 0) {
@@ -102,32 +158,92 @@ export class CompetitorSystem implements System {
     }
 
     // 偶尔触发合并
-    if (Math.random() < 0.05 && this.competitors.length >= 2) {
-      this.triggerMerger(events);
+    if (Math.random() < 0.05 && competitors.length >= 2) {
+      this.triggerMerger(competitors, events);
     }
 
-    // ★ Bug #1 修复：同步到 GameState，供 UI 和 marketCalc 使用
-    // 注意：必须深拷贝所有可变字段（数组、对象），否则 immer 会冻结共享引用，
-    // 导致后续本地 this.competitors 上的 push/赋值操作抛出 "object is not extensible"
-    const snapshot = this.competitors.map((c) => ({
-      ...c,
-      capabilities: { ...c.capabilities },
-      operatingRegions: [...c.operatingRegions],
-      regionQualityMultiplier: { ...c.regionQualityMultiplier },
-      releasedModels: c.releasedModels.map((m) => ({ ...m })),
-      intel: c.intel.map((i) => ({ ...i })),
-    }));
+    // intel 数组裁剪到最近 200 条，防止无限增长
+    for (const comp of competitors) {
+      if (comp.intel.length > 200) {
+        comp.intel = comp.intel.slice(-200);
+      }
+    }
+
+    // 设计-14：破产检查——资金归零累计达 BANKRUPT_THRESHOLD_DAYS 的竞争对手退出市场
+    const bankrupted: CompetitorState[] = [];
+    const survivors: CompetitorState[] = [];
+    for (const comp of competitors) {
+      if ((comp.bankruptDays ?? 0) >= BANKRUPT_THRESHOLD_DAYS) {
+        bankrupted.push(comp);
+      } else {
+        survivors.push(comp);
+      }
+    }
+
+    // 保证市场最少保留 MIN_ACTIVE_COMPETITORS 家活跃竞争对手：
+    // 当破产会让存活数低于下限时，对"排队破产"中相对健康（burnRate 较低）的几家
+    // 注入紧急融资使其续命，而非真的破产。
+    if (bankrupted.length > 0 && survivors.length < MIN_ACTIVE_COMPETITORS) {
+      // 按 burnRate 升序（烧钱慢的更易救活），保留前若干家
+      bankrupted.sort((a, b) => a.burnRate - b.burnRate);
+      const needToRevive = MIN_ACTIVE_COMPETITORS - survivors.length;
+      for (let i = 0; i < needToRevive && i < bankrupted.length; i++) {
+        const comp = bankrupted[i];
+        comp.bankruptDays = 0;
+        comp.funds = comp.burnRate * 12; // 紧急注入 12 个月运营资金
+        // 记录"紧急救援"情报
+        comp.intel.push({
+          id: genId(`intel-${comp.id}-${current.date}-bailout`),
+          competitorId: comp.id,
+          type: 'funding',
+          title: `${comp.name} 获得紧急救助`,
+          description: `通过秘密渠道获得紧急融资，避免破产`,
+          day: current.date,
+          severity: 'warning',
+        });
+        survivors.push(comp);
+      }
+      // 剩余真正破产的
+      for (let i = needToRevive; i < bankrupted.length; i++) {
+        // 真正退出，不加入 survivors
+      }
+    }
+
+    // 发射破产事件（仅对真正退出市场的竞争对手）
+    const trulyBankrupted = bankrupted.filter((c) => !survivors.includes(c));
+    for (const comp of trulyBankrupted) {
+      events.emit('COMPETITOR_BANKRUPT', comp.name, current.date);
+    }
+
+    // 写回 state（已深拷贝，安全；破产的竞争对手不写回，等同于退出市场）
     state.update((draft) => {
-      draft.competitorStates = snapshot;
+      draft.competitorStates = survivors.map((c) => ({
+        ...c,
+        capabilities: { ...c.capabilities },
+        operatingRegions: [...c.operatingRegions],
+        regionQualityMultiplier: { ...c.regionQualityMultiplier },
+        releasedModels: c.releasedModels.map((m) => ({ ...m })),
+        intel: c.intel.map((i) => ({ ...i })),
+      }));
     });
+
+    // 同步到 marketCalc 缓存
+    updateCompetitorStates(survivors);
   }
 
   private simulateCompetitor(comp: CompetitorState, day: number, events: EventBus): void {
     comp.releasedLastMonth = false;
 
     // ---- 1. 自动烧钱 ----
-    comp.funds -= comp.burnRate * (COMPETITOR_TICK_DAYS / 30); // 按实际天数为单位
+    comp.funds -= comp.burnRate * (COMPETITOR_TICK_DAYS / 30);
     comp.funds = Math.max(0, comp.funds);
+
+    // 设计-14：累计资金归零天数，用于触发破产退出
+    if (comp.funds <= 0) {
+      comp.bankruptDays = (comp.bankruptDays ?? 0) + COMPETITOR_TICK_DAYS;
+    } else {
+      comp.bankruptDays = 0;
+    }
 
     // ---- 2. 融资 ----
     if (comp.funds < comp.burnRate * 12) {
@@ -148,14 +264,13 @@ export class CompetitorSystem implements System {
       if (comp.infiltrationLevel > 0) events.emit('COMPETITOR_INTEL', intel);
     }
 
-    // ---- 3. 训练进度（按实际天数比例缩放）----
+    // ---- 3. 训练进度 ----
     const progressScale = COMPETITOR_TICK_DAYS / 30;
     const computeFactor = Math.log10(comp.computeUnits + 1) / Math.log10(10000);
     const researcherFactor = 1 + comp.coreResearchers / 200;
     const progressPerTick = 5 * computeFactor * researcherFactor * (0.8 + Math.random() * 0.4) * progressScale;
     comp.trainingProgress = Math.min(100, comp.trainingProgress + progressPerTick);
 
-    // 偶尔出丑闻卡进度
     if (Math.random() < 0.08 * progressScale) {
       const scandal = SCANDAL_EVENTS[Math.floor(Math.random() * SCANDAL_EVENTS.length)];
       comp.trainingProgress = Math.max(0, comp.trainingProgress - 10 * progressScale);
@@ -205,7 +320,7 @@ export class CompetitorSystem implements System {
       events.emit('COMPETITOR_RELEASE', modelName, newScore, day);
     }
 
-    // ---- 5. 动态成长（按实际天数缩放）----
+    // ---- 5. 动态成长 ----
     const growthScale = COMPETITOR_TICK_DAYS / 30;
     comp.computeUnits *= (1 + comp.growthRate * growthScale);
     comp.headcount = Math.floor(comp.headcount * (1 + comp.growthRate / 2 * growthScale));
@@ -217,43 +332,37 @@ export class CompetitorSystem implements System {
     }
   }
 
-  /** 合并事件 */
-  private triggerMerger(events: EventBus): void {
-    const idx1 = Math.floor(Math.random() * this.competitors.length);
+  /** 合并事件（操作传入的 competitors 数组） */
+  private triggerMerger(competitors: CompetitorState[], events: EventBus): void {
+    const idx1 = Math.floor(Math.random() * competitors.length);
     let idx2: number;
-    do { idx2 = Math.floor(Math.random() * this.competitors.length); } while (idx2 === idx1);
+    do { idx2 = Math.floor(Math.random() * competitors.length); } while (idx2 === idx1);
 
-    const a = this.competitors[idx1];
-    const b = this.competitors[idx2];
+    const a = competitors[idx1];
+    const b = competitors[idx2];
 
     const aAvgCap = Object.values(a.capabilities).reduce((s, v) => s + v, 0) / 16;
     const bAvgCap = Object.values(b.capabilities).reduce((s, v) => s + v, 0) / 16;
 
     if (aAvgCap > bAvgCap) {
-      this.absorb(a, b, idx2);
+      this.absorb(a, b, idx2, competitors);
     } else {
-      this.absorb(b, a, idx1);
+      this.absorb(b, a, idx1, competitors);
     }
 
     events.emit('COMPETITOR_MERGER', a.name, b.name);
   }
 
-  private absorb(strong: CompetitorState, weak: CompetitorState, weakIdx: number): void {
+  private absorb(
+    strong: CompetitorState,
+    weak: CompetitorState,
+    weakIdx: number,
+    competitors: CompetitorState[],
+  ): void {
     strong.funds += weak.funds * 0.7;
     strong.computeUnits += weak.computeUnits;
     strong.headcount += Math.floor(weak.headcount * 0.6);
     strong.coreResearchers += Math.floor(weak.coreResearchers * 0.5);
-    this.competitors.splice(weakIdx, 1);
-  }
-
-  getCompetitors(): CompetitorState[] {
-    return this.competitors;
-  }
-
-  infiltrate(competitorId: string, level: number): boolean {
-    const comp = this.competitors.find((c) => c.id === competitorId);
-    if (!comp) return false;
-    comp.infiltrationLevel = Math.max(comp.infiltrationLevel, level);
-    return true;
+    competitors.splice(weakIdx, 1);
   }
 }

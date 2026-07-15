@@ -133,7 +133,8 @@ export class RentCloudComputeCommand implements Command {
 
     state.update((draft) => {
       draft.resources['funds'] -= totalCost;
-      draft.resources['compute_power'] = (draft.resources['compute_power'] ?? 0) + this.tflops;
+      // 设计-3 修复：不再把云算力计入 compute_power 资源（避免与本地卡混淆）。
+      // 云算力统一通过 getActiveCloudTFLOPS() 查询，训练/推理系统已支持。
 
       const contracts = (draft.resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
       contracts.push(contract);
