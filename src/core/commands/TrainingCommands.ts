@@ -93,7 +93,33 @@ function autoDetectParallelConfig(
   const cluster = current.clusters.find((c) => c.id === clusterId);
   if (!cluster) return createDefaultParallelConfig();
 
-  const gpuMemory = getCardSpec('compute_h100')?.memoryGB ?? 80;
+  // BUG-27 修复：原实现硬编码 getCardSpec('compute_h100')，导致使用 B200/GB300
+  // 等大显存卡的集群仍按 80GB 估算显存，错误地启用不必要的 PP/TP，降低训练效率。
+  // 修复：扫描集群实际安装的卡，取最小显存作为基准。
+  // 同时统计集群可用卡数（online 且未占用）。
+  let gpuMemory = 0;
+  let totalCards = 0;
+  for (const nodeId of cluster.nodes) {
+    const node = current.serverNodes.find((n) => n.id === nodeId);
+    if (!node) continue;
+    for (const cardUid of node.installedCards) {
+      for (const modelId of Object.keys(current.resourceMeta)) {
+        const pool = current.resourceMeta[modelId] as any[];
+        const card = pool?.find((c: any) => c.uid === cardUid);
+        if (card && card.status === 'online' && card.assignedProjectId === null) {
+          totalCards++;
+          const spec = getCardSpec(modelId);
+          if (spec) {
+            gpuMemory = gpuMemory === 0 ? spec.memoryGB : Math.min(gpuMemory, spec.memoryGB);
+          }
+          break;
+        }
+      }
+    }
+  }
+  // 兜底：集群无可用卡时退回 H100 默认值（让 diagnoseTraining 报阻塞）
+  if (gpuMemory === 0) gpuMemory = getCardSpec('compute_h100')?.memoryGB ?? 80;
+
   const rawMem = paramCount * 2; // GB, FP16 参数体量
 
   // 如果能放入单卡，无需并行
@@ -111,23 +137,6 @@ function autoDetectParallelConfig(
   const hasTP = current.activeTechEffects.some(
     (e) => e.type === 'unlock_parallel_strategy' && e.strategy === 'tp',
   );
-
-  // 计算集群可用卡数（仅算 online 且未被占用的卡）
-  let totalCards = 0;
-  for (const nodeId of cluster.nodes) {
-    const node = current.serverNodes.find((n) => n.id === nodeId);
-    if (!node) continue;
-    for (const cardUid of node.installedCards) {
-      for (const modelId of Object.keys(current.resourceMeta)) {
-        const pool = current.resourceMeta[modelId] as any[];
-        const card = pool?.find((c: any) => c.uid === cardUid);
-        if (card && card.status === 'online' && card.assignedProjectId === null) {
-          totalCards++;
-          break;
-        }
-      }
-    }
-  }
 
   let ppStages = 1;
   let tpSize = 1;

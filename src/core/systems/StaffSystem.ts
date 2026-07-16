@@ -163,6 +163,20 @@ export class StaffSystem implements System {
     if (today > 0 && today - state.read().lastPerformanceEvalDay >= PERFORMANCE_EVAL_PERIOD) {
       this.evaluatePerformance(state, events);
     }
+
+    // 5. 设计-24 修复：每日清理 pendingCandidates 中已 hired/rejected 的候选人
+    // 原实现：HireCandidateCommand/RejectCandidateCommand 只设置 status，
+    // 但不从 pendingCandidates 数组移除，CleanupCandidatesCommand 存在却未被调用
+    // → 反复招聘后 pendingCandidates 无限增长，存档体积膨胀。
+    // 修复：StaffSystem 每日执行清理，仅保留 status='pending' 的候选人。
+    state.update((draft) => {
+      if (draft.pendingCandidates.length > 0) {
+        const pendingOnly = draft.pendingCandidates.filter((c) => c.status === 'pending');
+        if (pendingOnly.length < draft.pendingCandidates.length) {
+          draft.pendingCandidates = pendingOnly;
+        }
+      }
+    });
   }
 
   /** 应用培训完成效果 */

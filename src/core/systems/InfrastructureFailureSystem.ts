@@ -143,25 +143,6 @@ export class InfrastructureFailureSystem implements System {
         }
       }
 
-      // ★ R2: 仅当训练项目失去 >30% 分配卡时才暂停
-      for (const [projectId, lostCount] of projectLostCards) {
-        const total = projectTotalAssigned.get(projectId) ?? 1;
-        if (total > 0 && lostCount / total > 0.3) {
-          const project = draft.trainingProjects.find((p) => p.id === projectId);
-          if (project && project.status === 'training') {
-            project.status = 'paused';
-            project.pauseReason = `同日 ${lostCount}/${total} 卡故障（超过 30%），训练暂停`;
-            // 回退到 checkpoint
-            const lostProgress = project.lastCheckpointRemaining - project.computeRemaining;
-            if (lostProgress > 0) {
-              project.lostFlops += lostProgress;
-              project.computeRemaining = project.lastCheckpointRemaining;
-            }
-            pausedProjects.push(projectId);
-          }
-        }
-      }
-
       // 3. 节点故障
       const totalNodes = draft.serverNodes.length;
       const nodeCountFactor = 1 + Math.log(totalNodes + 1) / 10;
@@ -227,6 +208,30 @@ export class InfrastructureFailureSystem implements System {
             message: `节点 ${node.name} 故障，${offlineCount} 卡离线（${recoverMin}-${recoverMax} 天后自动恢复）`,
             severity: 'critical',
           });
+        }
+      }
+
+      // ★ R2: 仅当训练项目失去 >30% 分配卡时才暂停
+      // 设计-23 修复：原实现把 R2 检查放在卡故障循环之后、节点故障循环之前，
+      // 导致节点故障导致的卡丢失不触发 30% 暂停检查，可能让训练带着损坏的 checkpoint 继续。
+      // 修复：把 R2 检查移到所有故障（卡级 + 节点级）处理完毕后做统一判定，
+      // 确保任何来源的累计卡丢失超过 30% 都能触发暂停。
+      for (const [projectId, lostCount] of projectLostCards) {
+        const total = projectTotalAssigned.get(projectId) ?? 1;
+        if (total > 0 && lostCount / total > 0.3) {
+          const project = draft.trainingProjects.find((p) => p.id === projectId);
+          // 仅对仍在 training 状态的项目暂停（已被 R3 暂停的不重复处理）
+          if (project && project.status === 'training') {
+            project.status = 'paused';
+            project.pauseReason = `同日 ${lostCount}/${total} 卡故障（超过 30%），训练暂停`;
+            // 回退到 checkpoint
+            const lostProgress = project.lastCheckpointRemaining - project.computeRemaining;
+            if (lostProgress > 0) {
+              project.lostFlops += lostProgress;
+              project.computeRemaining = project.lastCheckpointRemaining;
+            }
+            pausedProjects.push(projectId);
+          }
         }
       }
 

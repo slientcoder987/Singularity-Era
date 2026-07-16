@@ -368,17 +368,29 @@ export class TrainingSystem implements System {
             };
             draft.models.push(model);
 
-            // ★ Bug #9 修复 + 设计 #7：将训练贡献分配给所有 idle 研究员
+            // ★ Bug #9 修复 + 设计 #7：将训练贡献分配给研究员
+            // BUG-22 修复：定向分配到该训练项目的研究员（status='assigned'）也应获得贡献分，
+            // 否则他们只能拿到训练速度加成（1.5%）却因 monthlyContribution=0 被评 C 级 → 忠诚度下降 → 离职。
+            // 与 ResearchSystem/CollectionSystem 行为对齐。
             const trainingResearcherIds = draft.employees
-              .filter((e) => e.role === StaffRole.RESEARCHER && e.status === 'idle')
+              .filter((e) =>
+                e.role === StaffRole.RESEARCHER &&
+                (e.status === 'idle' ||
+                  (e.status === 'assigned' && e.assignedProjectId === project.id)),
+              )
               .map((e) => e.id);
             accumulateResearcherContribution(draft, trainingResearcherIds, 5);
             releasedModels.push({ name: project.modelName, score: model.baseScore });
           }
         } else {
-          // 每日贡献累积（Bug #9 修复：分配给 idle 研究员）
+          // 每日贡献累积（Bug #9 修复：分配给研究员）
+          // BUG-22 修复：assigned 到本训练项目的研究员也累积贡献分
           const dailyResearcherIds = draft.employees
-            .filter((e) => e.role === StaffRole.RESEARCHER && e.status === 'idle')
+            .filter((e) =>
+              e.role === StaffRole.RESEARCHER &&
+              (e.status === 'idle' ||
+                (e.status === 'assigned' && e.assignedProjectId === project.id)),
+            )
             .map((e) => e.id);
           accumulateResearcherContribution(draft, dailyResearcherIds, 1);
           progressInfo.push({

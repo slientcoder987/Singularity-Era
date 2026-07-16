@@ -376,13 +376,21 @@ export class CompetitorSystem implements System {
     const aAvgCap = Object.values(a.capabilities).reduce((s, v) => s + v, 0) / 16;
     const bAvgCap = Object.values(b.capabilities).reduce((s, v) => s + v, 0) / 16;
 
+    // 设计-27 修复：原实现固定 emit(a.name, b.name)，但 absorb() 可能以 b 吸收 a，
+    // 导致 UI 显示"弱方收购强方"。修复：根据实际吸收方向发射强/弱方名称。
+    let strongName: string;
+    let weakName: string;
     if (aAvgCap > bAvgCap) {
       this.absorb(a, b, idx2, competitors);
+      strongName = a.name;
+      weakName = b.name;
     } else {
       this.absorb(b, a, idx1, competitors);
+      strongName = b.name;
+      weakName = a.name;
     }
 
-    events.emit('COMPETITOR_MERGER', a.name, b.name);
+    events.emit('COMPETITOR_MERGER', strongName, weakName);
   }
 
   private absorb(

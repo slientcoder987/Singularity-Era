@@ -131,10 +131,14 @@ export class RiskSystem implements System {
         }
 
         // 从 nodeAssignments 计算实际并行规模（总卡数）
-        let parallelSize = 1;
+        // BUG-23 修复：原 `let parallelSize = 1` + 累加导致 off-by-one，
+        // 100 张卡被算成 101，训练崩溃概率偏高。应初始化为 0。
+        let parallelSize = 0;
         for (const nodeCards of Object.values(project.nodeAssignments)) {
           parallelSize += nodeCards.length;
         }
+        // parallelSize 为 0 时（异常空分配），跳过崩溃判定
+        if (parallelSize === 0) continue;
 
         const crashProb = calcTrainingCrashProbability(
           parallelSize,

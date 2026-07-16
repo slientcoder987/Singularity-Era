@@ -9,7 +9,7 @@
  * 本文件内部统一换算。
  */
 import type { Command } from '../interfaces/Command';
-import type { GameState } from '../GameState';
+import type { GameState, CardInstance } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { CompetitorState } from '../entities/Competitor';
 import type { ExternalCorp } from '../entities/Competitor';
@@ -90,21 +90,181 @@ export class AcquireCompetitorCommand implements Command {
 
     // 成功 — comp.funds 是 M，需要 × M
     const compFundsActual = comp.funds * M;
+    // comp.computeUnits 是 H100 等效数量，折算 80% 为可用算力
     const compComputeUnits = Math.floor(comp.computeUnits * 0.8);
+
+    // 收集转移信息（在 update 外计算，避免读取已 revoked 的 proxy）
+    const transferredResearchers = Math.min(10, Math.floor(comp.coreResearchers * 0.5));
+    const transferredHeadcount = Math.floor(comp.headcount * 0.6);
 
     state.update((draft) => {
       draft.resources['funds'] = (draft.resources['funds'] ?? 0) - this.offerPrice + compFundsActual;
-      // BUG-20 修复：使用通用算力资源（TFLOPS），而非硬编码 H100
-      // 竞争对手硬件未知，收购后折算为等效算力增量
-      const tflopsGain = compComputeUnits * 500; // 每 unit ≈ 500 TFLOPS（1 H100）
-      draft.resources['compute_power'] = (draft.resources['compute_power'] ?? 0) + tflopsGain;
+
+      // ★ BUG-25 修复：收购后必须创建实际 CardInstance，否则训练系统通过
+      // serverNodes → installedCards → CardInstance 链路计算有效算力时看不到新增算力。
+      // 把 compComputeUnits (H100 等效数量) 转换为真实可安装的 H100 卡实例。
+      // 按 8 卡/节点组织，建立专用数据中心 + 集群 + 节点 + 卡实例。
+      const acquiredDcId = `dc-acq-${comp.id}-${draft.date}`;
+      const acquiredClusterId = `cl-acq-${comp.id}-${draft.date}`;
+      const nodeIdPrefix = `node-acq-${comp.id}-${draft.date}`;
+
+      // 1. 创建数据中心（容纳新硬件，沿用 comp.name 命名）
+      // 电力容量按 0.7kW/卡 + 20% 余量估算（H100 maxPowerDrawKW=0.7）
+      const cardsPerNode = 8;
+      const totalCards = compComputeUnits;
+      const nodeCount = Math.ceil(totalCards / cardsPerNode);
+      const totalPowerKW = totalCards * 0.7 * 1.2;
+      const totalPowerMW = Math.max(0.5, totalPowerKW / 1000);
+
+      draft.dataCenters.push({
+        id: acquiredDcId,
+        name: `${comp.name} 数据中心`,
+        location: draft.headquartersRegionId ?? 'unknown',
+        maxPowerMW: totalPowerMW,
+        usedPowerMW: 0,
+        coolingType: 'liquid',
+        pue: 1.1,
+        basePue: 1.1,
+        currentPue: 1.1,
+        clusters: [acquiredClusterId],
+        buildCost: 0, // 收购价已含
+        maintenanceCostPerDay: 0,
+        powerCostPerKWh: 0.1,
+        builtAt: draft.date,
+        lastMaintenanceDay: draft.date,
+      });
+
+      // 2. 创建集群（rail_optimized 拓扑，最大化训练效率）
+      const nodeIds: string[] = [];
+      for (let i = 0; i < nodeCount; i++) {
+        const nodeId = `${nodeIdPrefix}-${i}`;
+        nodeIds.push(nodeId);
+        const cardsInThisNode = Math.min(cardsPerNode, totalCards - i * cardsPerNode);
+        draft.serverNodes.push({
+          id: nodeId,
+          name: `${comp.name} 节点 ${i + 1}`,
+          slotCount: cardsPerNode,
+          installedCards: [], // 卡实例稍后填充
+          interconnect: 'NVLink4',
+          interconnectBandwidth: 900,
+          powerSupplyKW: cardsPerNode * 0.7 * 1.2,
+          maxPowerDrawKW: cardsInThisNode * 0.7,
+          nvswitchGeneration: 4,
+          reliability: 90,
+          baseReliability: 90,
+          nodeType: 'dgx',
+          cost: 0,
+          maintenanceCost: 5,
+          clusterId: acquiredClusterId,
+          builtAt: draft.date,
+          lastMaintenanceDay: draft.date,
+        });
+      }
+
+      draft.clusters.push({
+        id: acquiredClusterId,
+        name: `${comp.name} 集群`,
+        nodes: nodeIds,
+        network: 'InfiniBand NDR',
+        switchCapacity: 400,
+        networkBandwidth: 50,
+        networkTopology: 'rail_optimized',
+        maxNodes: nodeCount,
+        maxTPDegree: 8,
+        allReduceBandwidth: 50,
+        parallelEfficiencyBase: 0.95,
+        buildCost: 0,
+        operationalCostPerDay: 10,
+        utilizationBonus: 0.05,
+        baseUtilizationBonus: 0.05,
+        dataCenterId: acquiredDcId,
+        storageType: 'nvme_raid',
+        storageIO: 100,
+        storageCapacity: 100,
+        storageCostPerDay: 5,
+        createdAt: draft.date,
+      });
+
+      // 3. 创建 CardInstance 并装入对应节点
+      // 使用 compute_h100 规格作为等效算力载体（comp.computeUnits 定义即 H100 等效）
+      const modelId = 'compute_h100';
+      if (!draft.resourceMeta[modelId]) {
+        draft.resourceMeta[modelId] = [];
+      }
+      const pool = draft.resourceMeta[modelId] as CardInstance[];
+      for (let i = 0; i < totalCards; i++) {
+        const nodeId = nodeIds[Math.floor(i / cardsPerNode)];
+        const uid = `card-acq-${comp.id}-${draft.date}-${i}`;
+        const card: CardInstance = {
+          uid,
+          modelId,
+          status: 'online',
+          age: 0,
+          assignedProjectId: null,
+          purchasedAt: draft.date,
+          location: nodeId,
+        };
+        pool.push(card);
+        const node = draft.serverNodes.find((n) => n.id === nodeId);
+        if (node) node.installedCards.push(uid);
+      }
+      // 同步资源计数
+      draft.resources[modelId] = (draft.resources[modelId] ?? 0) + totalCards;
+
+      // ★ 设计-26 修复：转移被收购方的核心研究员到玩家公司
+      // 上限检查：每种角色最多 10 人（CORE_EMPLOYEE_CAP_PER_ROLE）
+      const currentResearcherCount = draft.employees.filter((e) => e.role === StaffRole.RESEARCHER).length;
+      const slotsAvailable = Math.max(0, 10 - currentResearcherCount);
+      const actualTransferred = Math.min(transferredResearchers, slotsAvailable);
+      const eliteNames = ['陈天石', '李明达', '赵思齐', '刘鸿儒', '王知远',
+        '张启明', '杨致新', '黄尚文', '吴恩远', 'Rafael'];
+      for (let i = 0; i < actualTransferred; i++) {
+        const level = 6 + Math.floor(Math.random() * 4); // Lv6-9，反映对方高级人才
+        const suffix = Math.random().toString(36).slice(2, 5);
+        draft.employees.push({
+          id: `acq-emp-${draft.date}-${suffix}-${i}`,
+          name: `${eliteNames[i % eliteNames.length]} (${comp.name}转投)`,
+          role: StaffRole.RESEARCHER,
+          attributes: {
+            intelligence: 55 + Math.floor(Math.random() * 35),
+            creativity: 50 + Math.floor(Math.random() * 35),
+            leadership: 30 + Math.floor(Math.random() * 35),
+            stamina: 40 + Math.floor(Math.random() * 35),
+            charisma: 25 + Math.floor(Math.random() * 35),
+          },
+          skills: [],
+          skillPoints: Math.max(0, level - 4),
+          level,
+          salary: 300_000 + Math.random() * 500_000,
+          loyalty: 50 + Math.random() * 25, // 转投员工忠诚度中等
+          fatigue: 10,
+          status: 'idle',
+          hireDay: draft.date,
+          experience: 200 + Math.random() * 2000,
+        });
+      }
+
+      // 转移普通员工（作为资源数量，不受核心员工上限限制）
+      if (transferredHeadcount > 0) {
+        draft.resources['staff_data_engineer'] = (draft.resources['staff_data_engineer'] ?? 0)
+          + Math.floor(transferredHeadcount * 0.4);
+        draft.resources['staff_system_engineer'] = (draft.resources['staff_system_engineer'] ?? 0)
+          + Math.floor(transferredHeadcount * 0.3);
+        draft.resources['staff_product_manager'] = (draft.resources['staff_product_manager'] ?? 0)
+          + Math.floor(transferredHeadcount * 0.3);
+      }
+
       // 从竞争列表移除
       const competitors = (draft as any).competitorStates as CompetitorState[];
       const idx = competitors.findIndex((c) => c.id === this.competitorId);
       if (idx >= 0) competitors.splice(idx, 1);
     });
 
-    events.emit('ACQUIRE_SUCCESS', comp.name, this.offerPrice);
+    events.emit('ACQUIRE_SUCCESS', comp.name, this.offerPrice, {
+      acquiredCards: compComputeUnits,
+      transferredResearchers,
+      transferredHeadcount,
+    });
   }
 }
 
@@ -154,10 +314,15 @@ export class PoachTalentCommand implements Command {
     }
 
     // 挖角仅获得 1 名核心研究员（对方的关键人才），而非批量低等级员工
-    const poachedResearchers = 1;
     const poachedHeadcount = Math.floor(
       comp.headcount * 0.05 * (1 + comp.infiltrationLevel * 0.3),
     );
+
+    // BUG-26 修复：跟踪是否真的添加了研究员。
+    // 原实现：上限检查后不加员工但仍 emit POACH_SUCCESS，玩家误以为成功。
+    // 修复：使用 transferred 标志，区分成功/失败事件。
+    let transferred = false;
+    let failureReason: string | null = null;
 
     state.update((draft) => {
       draft.resources['funds'] = (draft.resources['funds'] ?? 0) - this.budget;
@@ -203,6 +368,10 @@ export class PoachTalentCommand implements Command {
           hireDay: draft.date,
           experience: 300 + Math.random() * 3000,
         });
+        transferred = true;
+      } else {
+        // 上限已达，但普通员工和挖角动作本身仍执行（扣除对方资源、扣预算）
+        failureReason = `核心研究员已达上限（${CORE_CAP}人），本次挖角未获得核心人才`;
       }
       // 普通员工入池（不受核心上限限制）
       if (poachedHeadcount > 0) {
@@ -215,7 +384,12 @@ export class PoachTalentCommand implements Command {
       }
     });
 
-    events.emit('POACH_SUCCESS', comp.name, poachedResearchers, poachedHeadcount);
+    // BUG-26 修复：根据 transferred 决定 emit 哪个事件
+    if (transferred) {
+      events.emit('POACH_SUCCESS', comp.name, 1, poachedHeadcount);
+    } else {
+      events.emit('POACH_PARTIAL', comp.name, poachedHeadcount, failureReason ?? '未知原因');
+    }
   }
 }
 
@@ -330,6 +504,17 @@ export class HackParametersCommand implements Command {
     }
 
     if (successRoll < successChance) {
+      // 设计-25 修复：原实现 paramCount 硬编码 70，无论偷哪家公司都是 70B。
+      // 修复：从 comp.releasedModels 取最近发布的真实参数量；若无历史发布，
+      // 按能力评分粗略推断（500 分 ≈ 7B，1500 分 ≈ 175B，log 推算）。
+      const latestRelease = comp.releasedModels[comp.releasedModels.length - 1];
+      const realParamCount = latestRelease
+        ? latestRelease.paramCount
+        : Math.max(
+            7,
+            Math.round(Math.exp(Math.log(175) * Math.max(...Object.values(comp.capabilities)) / 1500)),
+          );
+
       state.update((draft) => {
         draft.resources['funds'] = (draft.resources['funds'] ?? 0) - HACK_PARAMETERS_COST;
         // BUG-9 修复：偷来的模型能力打折扣（蒸馏损失），且标记 stolen 状态
@@ -340,7 +525,7 @@ export class HackParametersCommand implements Command {
         const newModel = {
           id: `stolen-${comp.id}-${draft.date}`,
           name: `${comp.name} 参数泄漏版`,
-          paramCount: 70,
+          paramCount: realParamCount,
           architecture: 'dense+rmsnorm+rope',
           contextLength: 8192,
           datasetId: 'leaked',
