@@ -71,6 +71,8 @@ export class RiskSystem implements System {
               if (p.status === 'training') {
                 p.status = 'paused';
                 p.pauseReason = `风险事件：${evt.name}`;
+                // 设计-18：记录自动恢复日期，TrainingSystem 到期后自动恢复
+                p.autoResumeDay = draft.date + evt.effects.trainingPauseDays;
               }
             }
           }

@@ -1,7 +1,8 @@
 import type { Command } from '../interfaces/Command';
 import type { GameState, CardInstance } from '../GameState';
 import type { EventBus } from '../EventBus';
-import type { TrainingProject } from '../entities/TrainingProject';
+import type { TrainingProject, ParallelConfig } from '../entities/TrainingProject';
+import { createDefaultParallelConfig } from '../entities/TrainingProject';
 import type { ModelParams } from '../utils/computeUtilization';
 import { getCardSpec } from '../config/computeCards';
 import { diagnoseTraining } from '../utils/trainingFeasibility';
@@ -75,6 +76,87 @@ export function allocateCardsFromCluster(
  * ====================================================================== */
 
 /**
+ * 自动检测最优并行策略。
+ *
+ * 当玩家未手动指定 parallelConfig 时，根据：
+ * 1. 模型参数规模与所需显存 (paramCount × 2 GB)
+ * 2. 集群中 GPU 的单卡显存
+ * 3. 已解锁的并行策略（从 activeTechEffects 中推断）
+ *
+ * 自动计算 PP/TP 组合以让大模型（40B+）能在有限显存上训练。
+ */
+function autoDetectParallelConfig(
+  current: ReturnType<GameState['read']>,
+  paramCount: number,
+  clusterId: string,
+): ParallelConfig {
+  const cluster = current.clusters.find((c) => c.id === clusterId);
+  if (!cluster) return createDefaultParallelConfig();
+
+  const gpuMemory = getCardSpec('compute_h100')?.memoryGB ?? 80;
+  const rawMem = paramCount * 2; // GB, FP16 参数体量
+
+  // 如果能放入单卡，无需并行
+  if (rawMem <= gpuMemory) {
+    return createDefaultParallelConfig();
+  }
+
+  // 计算所需缩减因子
+  const reductionNeeded = Math.ceil(rawMem / gpuMemory);
+
+  // 获取解锁策略（通过扫描 activeTechEffects）
+  const hasPP = current.activeTechEffects.some(
+    (e) => e.type === 'unlock_parallel_strategy' && e.strategy === 'pp',
+  );
+  const hasTP = current.activeTechEffects.some(
+    (e) => e.type === 'unlock_parallel_strategy' && e.strategy === 'tp',
+  );
+
+  // 计算集群可用卡数（仅算 online 且未被占用的卡）
+  let totalCards = 0;
+  for (const nodeId of cluster.nodes) {
+    const node = current.serverNodes.find((n) => n.id === nodeId);
+    if (!node) continue;
+    for (const cardUid of node.installedCards) {
+      for (const modelId of Object.keys(current.resourceMeta)) {
+        const pool = current.resourceMeta[modelId] as any[];
+        const card = pool?.find((c: any) => c.uid === cardUid);
+        if (card && card.status === 'online' && card.assignedProjectId === null) {
+          totalCards++;
+          break;
+        }
+      }
+    }
+  }
+
+  let ppStages = 1;
+  let tpSize = 1;
+
+  if (hasPP && hasTP) {
+    // 两者都有：平分，sqrt 取整，不超过可用卡数
+    const half = Math.min(Math.ceil(Math.sqrt(reductionNeeded)), Math.floor(Math.sqrt(totalCards)));
+    ppStages = Math.max(1, half);
+    tpSize = Math.max(1, Math.min(half, Math.ceil(reductionNeeded / ppStages)));
+  } else if (hasPP) {
+    // 仅 PP：全用 PP，上限 8
+    ppStages = Math.min(8, Math.max(1, Math.ceil(reductionNeeded)));
+  } else if (hasTP) {
+    // 仅 TP：全用 TP，上限 8
+    tpSize = Math.min(8, Math.max(1, Math.ceil(reductionNeeded)));
+  }
+  // 都不解锁 → 退回纯 DP（会被 diagnoseTraining 报 blocker）
+
+  return {
+    strategies: ['dp'],
+    dpReplicas: Math.max(1, Math.floor(totalCards / (ppStages * tpSize))),
+    ppStages,
+    tpSize,
+    epGroups: 1,
+    cpSize: 1,
+  };
+}
+
+/**
  * 启动训练项目
  *
  * 算力需求根据 Chinchilla 缩放定律自动计算，基于参数量、数据集 tokens 和上下文长度。
@@ -85,7 +167,7 @@ export class StartTrainingCommand implements Command {
     private readonly paramCount: number,
     private readonly architecture: string,
     private readonly clusterId: string,
-    /** 每卡最低显存要求 GB（可选，默认从模型参数推算） */
+    /** 每卡最低显存要求 GB（可选，默认从模型参数推算，已考虑并行缩减） */
     private readonly minMemoryPerCard?: number,
     /** 上下文长度（token 数，默认 4096） */
     private readonly contextLength: number = 4096,
@@ -95,6 +177,14 @@ export class StartTrainingCommand implements Command {
     private readonly techIds: string[] = ['pretraining'],
     /** 是否实验性训练 */
     private readonly isExperimental: boolean = false,
+    /**
+     * 并行策略配置（可选）。
+     *
+     * Bug Fix：大模型（40B+）必须通过 PP/TP 降低单卡显存需求才能启动训练。
+     * 若未指定则使用默认纯 DP，此时单卡显存 = 模型总需求。
+     * 指定 PP×TP > 1 后，minMemoryPerCard 自动除以并行缩减因子。
+     */
+    private readonly parallelConfig?: ParallelConfig,
   ) {}
 
   execute(state: GameState, events: EventBus): void {
@@ -105,10 +195,19 @@ export class StartTrainingCommand implements Command {
       return;
     }
 
-    // 诊断训练可行性
+    // ★ 自动检测并行策略（如果未手动指定）
+    // 大模型（40B+）无法放入单卡 H100 (80GB)，即使玩家解锁了 TP 也会因为
+    // UI 不传 parallelConfig 而被默认纯 DP 拦截。此处自动检测解锁的策略
+    // 并计算所需 PP/TP 组合。
+    const autoPC = this.parallelConfig ?? autoDetectParallelConfig(
+      current, this.paramCount, this.clusterId,
+    );
+    const pc = autoPC;
+
+    // 诊断训练可行性（传入并行策略以准确估算显存）
     const issues = diagnoseTraining(
       this.paramCount, this.contextLength, this.architecture,
-      this.clusterId, state,
+      this.clusterId, state, pc,
     );
     const blockers = issues.filter((i) => i.severity === 'blocker');
     if (blockers.length > 0) {
@@ -119,12 +218,18 @@ export class StartTrainingCommand implements Command {
       return;
     }
 
-    // 推算最低显存需求
+    // 推算最低显存需求（考虑并行策略的显存缩减）
+    const ppReduction = pc.ppStages > 1 ? pc.ppStages : 1;
+    const tpReduction = pc.tpSize > 1 ? pc.tpSize : 1;
+    const memDivisor = ppReduction * tpReduction;
     const modelParams: ModelParams = {
       paramCount: this.paramCount,
       architecture: this.architecture,
+      parallelConfig: pc,
     };
-    const minMem = this.minMemoryPerCard ?? Math.ceil(modelParams.paramCount * 2);
+    const rawMemPerCard = this.minMemoryPerCard ?? Math.ceil(modelParams.paramCount * 2);
+    // 并行策略降低单卡显存需求：PP 切层、TP 切维度
+    const minMem = Math.max(1, Math.ceil(rawMemPerCard / memDivisor));
 
     // 分配卡
     const assignments = allocateCardsFromCluster(state, this.clusterId, minMem);
@@ -174,6 +279,7 @@ export class StartTrainingCommand implements Command {
       trainingPhase: 'warmup',
       trainingLog: [],
       spikeRecoveryDays: 0,
+      parallelConfig: pc,
     };
 
     state.update((draft) => {
@@ -467,5 +573,139 @@ export class ReallocateTrainingCardsCommand implements Command {
         totalCards: actualTotalRelease,
       });
     }
+  }
+}
+
+/* ========================================================================
+ * SetParallelStrategyCommand
+ * 
+ * 为训练项目设置并行策略，影响训练效率和模型规模上限。
+ * 策略需通过技术研发解锁（DP 默认可用）。
+ *
+ * 约束规则：
+ * - PP × TP × DP = 总卡数（3D 并行一致性）
+ * - EP 仅 MoE 架构有效
+ * - CP 需要 RoPE + FlashAttention v2
+ * - TP ≥ 2 时要求集群内存在 NVLink 节点
+ * ====================================================================== */
+export class SetParallelStrategyCommand implements Command {
+  constructor(
+    private readonly projectId: string,
+    /** 各维度切分数（未指定的维度保持原值） */
+    private readonly config: {
+      ppStages?: number;
+      tpSize?: number;
+      dpReplicas?: number;
+      epGroups?: number;
+      cpSize?: number;
+    },
+  ) {}
+
+  execute(state: GameState, events: EventBus): void {
+    const current = state.read();
+    const project = current.trainingProjects.find((p) => p.id === this.projectId);
+    if (!project) {
+      events.emit('PARALLEL_CONFIG_REJECTED', { reason: '训练项目不存在' });
+      return;
+    }
+    if (project.status === 'completed' || project.status === 'failed') {
+      events.emit('PARALLEL_CONFIG_REJECTED', { reason: '已完成/失败的项目不能修改策略' });
+      return;
+    }
+
+    // 检查技术解锁
+    const unlockedStrategies = new Set<string>(['dp']); // DP 始终可用
+    const techEffects = current.activeTechEffects ?? [];
+    for (const eff of techEffects) {
+      if (eff.type === 'unlock_parallel_strategy') {
+        unlockedStrategies.add(eff.strategy);
+      }
+    }
+
+    const pc = { ...project.parallelConfig };
+    if (this.config.ppStages !== undefined) pc.ppStages = this.config.ppStages;
+    if (this.config.tpSize !== undefined) pc.tpSize = this.config.tpSize;
+    if (this.config.dpReplicas !== undefined) pc.dpReplicas = this.config.dpReplicas;
+    if (this.config.epGroups !== undefined) pc.epGroups = this.config.epGroups;
+    if (this.config.cpSize !== undefined) pc.cpSize = this.config.cpSize;
+
+    // 合法性校验
+    const newStrategies: string[] = ['dp'];
+    if (pc.ppStages > 1) {
+      if (!unlockedStrategies.has('pp')) {
+        events.emit('PARALLEL_CONFIG_REJECTED', { reason: '流水线并行 (PP) 未解锁，需研发 pipeline_parallel' });
+        return;
+      }
+      newStrategies.push('pp');
+    }
+    if (pc.tpSize > 1) {
+      if (!unlockedStrategies.has('tp')) {
+        events.emit('PARALLEL_CONFIG_REJECTED', { reason: '张量并行 (TP) 未解锁，需研发 tensor_parallel' });
+        return;
+      }
+      newStrategies.push('tp');
+    }
+    if (pc.epGroups > 1) {
+      if (!unlockedStrategies.has('ep')) {
+        events.emit('PARALLEL_CONFIG_REJECTED', { reason: '专家并行 (EP) 未解锁，需研发 expert_parallel' });
+        return;
+      }
+      if (project.architecture !== 'moe') {
+        events.emit('PARALLEL_CONFIG_REJECTED', { reason: '专家并行 (EP) 仅支持 MoE 架构' });
+        return;
+      }
+      newStrategies.push('ep');
+    }
+    if (pc.cpSize > 1) {
+      if (!unlockedStrategies.has('cp')) {
+        events.emit('PARALLEL_CONFIG_REJECTED', { reason: '上下文并行 (CP) 未解锁，需研发 context_parallel' });
+        return;
+      }
+      newStrategies.push('cp');
+    }
+
+    // 3D 并行一致性检查：总卡数 = dp × pp × tp
+    const totalCards = Object.values(project.nodeAssignments).reduce((s, a) => s + a.length, 0);
+    const requiredCards = pc.dpReplicas * pc.ppStages * pc.tpSize;
+    if (requiredCards !== totalCards) {
+      events.emit('PARALLEL_CONFIG_REJECTED', {
+        reason: `3D 并行不匹配：DP(${pc.dpReplicas}) × PP(${pc.ppStages}) × TP(${pc.tpSize}) = ${requiredCards} ≠ 总卡数 ${totalCards}`,
+      });
+      return;
+    }
+
+    // TP ≥ 2 时要求 NVLink
+    if (pc.tpSize > 1) {
+      const cluster = current.clusters.find((c) => c.id === project.clusterId);
+      if (cluster) {
+        const hasNVLink = cluster.nodes.some((nid) => {
+          const node = current.serverNodes.find((n) => n.id === nid);
+          return node ? (node.nvswitchGeneration ?? 0) >= 1 : false;
+        });
+        if (!hasNVLink) {
+          events.emit('PARALLEL_CONFIG_REJECTED', { reason: '张量并行 (TP) 要求集群至少包含 NVSwitch 节点' });
+          return;
+        }
+      }
+    }
+
+    pc.strategies = newStrategies as typeof pc.strategies;
+
+    state.update((draft) => {
+      const p = draft.trainingProjects.find((x) => x.id === this.projectId);
+      if (p) {
+        p.parallelConfig = pc as any;
+      }
+    });
+
+    events.emit('PARALLEL_CONFIG_UPDATED', {
+      projectId: this.projectId,
+      strategies: pc.strategies,
+      dpReplicas: pc.dpReplicas,
+      ppStages: pc.ppStages,
+      tpSize: pc.tpSize,
+      epGroups: pc.epGroups,
+      cpSize: pc.cpSize,
+    });
   }
 }

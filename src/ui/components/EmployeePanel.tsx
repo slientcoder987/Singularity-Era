@@ -7,7 +7,7 @@ import {
   CORE_EMPLOYEE_CAP_PER_ROLE,
   ROLE_TO_STAFF_RESOURCE,
   experienceForLevel,
-  NORMAL_HIRE_COST,
+  calcNormalHireCost,
   RECRUITMENT_CHANNELS,
   BONUS_SALARY_RATIO,
   BONUS_COOLDOWN_DAYS,
@@ -83,7 +83,7 @@ export function EmployeePanel() {
       </div>
 
       <div className={styles.tabBody}>
-        {tab === 'employees' && (
+        <div style={{ display: tab === 'employees' ? 'block' : 'none' }}>
           <EmployeesTab
             game={game}
             employees={employees}
@@ -93,8 +93,8 @@ export function EmployeePanel() {
             date={date}
             lastTeamBuildingDay={lastTeamBuildingDay}
           />
-        )}
-        {tab === 'recruitment' && (
+        </div>
+        <div style={{ display: tab === 'recruitment' ? 'block' : 'none' }}>
           <RecruitmentTab
             game={game}
             employees={employees}
@@ -102,22 +102,22 @@ export function EmployeePanel() {
             resources={resources}
             funds={funds}
           />
-        )}
-        {tab === 'training' && (
+        </div>
+        <div style={{ display: tab === 'training' ? 'block' : 'none' }}>
           <TrainingTab
             game={game}
             employees={employees}
             staffTrainings={staffTrainings}
             funds={funds}
           />
-        )}
-        {tab === 'departments' && (
+        </div>
+        <div style={{ display: tab === 'departments' ? 'block' : 'none' }}>
           <DepartmentsTab
             game={game}
             employees={employees}
             departments={departments}
           />
-        )}
+        </div>
       </div>
     </section>
   );
@@ -428,9 +428,22 @@ interface RecruitmentTabProps {
 
 function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }: RecruitmentTabProps) {
   const [role, setRole] = useState<StaffRole>(StaffRole.RESEARCHER);
+  // 各角色批量招聘数量
+  const [normalHireQty, setNormalHireQty] = useState<Record<string, number>>({});
 
   const activeCandidates = pendingCandidates.filter((c) => c.status === 'pending');
   const roleCandidates = activeCandidates.filter((c) => c.role === role);
+
+  /** 计算批量招聘总费用（NORMAL_HIRE_TIER 递增） */
+  const calcBatchHireCost = (role: StaffRole, qty: number): number => {
+    const staffId = ROLE_TO_STAFF_RESOURCE[role];
+    const currentCount = resources[staffId] ?? 0;
+    let total = 0;
+    for (let i = 0; i < qty; i++) {
+      total += calcNormalHireCost(currentCount + i);
+    }
+    return total;
+  };
 
   return (
     <div>
@@ -477,25 +490,51 @@ function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }
         })}
       </div>
 
-      {/* 普通员工招聘 */}
+      {/* 普通员工招聘（批量） */}
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>普通员工</span>
-        {(Object.values(StaffRole)).map((r) => {
-          const staffId = ROLE_TO_STAFF_RESOURCE[r];
-          const count = resources[staffId] ?? 0;
-          return (
-            <button
-              key={`normal-${r}`}
-              className={styles.btn}
-              onClick={() => game.executeCommand(new HireNormalEmployeeCommand(r))}
-              disabled={funds < NORMAL_HIRE_COST}
-            >
-              招 {ROLE_CONFIG[r].displayName}
-              <span className={styles.devHint}> ({count})</span>
-            </button>
-          );
-        })}
       </div>
+      {(Object.values(StaffRole)).map((r) => {
+        const staffId = ROLE_TO_STAFF_RESOURCE[r];
+        const count = resources[staffId] ?? 0;
+        const qty = normalHireQty[r] || 1;
+        const batchCost = calcBatchHireCost(r, qty);
+        const nextCost = calcNormalHireCost(count); // 每人的起价
+        return (
+          <div key={`normal-${r}`} className={styles.devRow}>
+            <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+              {ROLE_CONFIG[r].displayName} ({count}人 · 起 ${nextCost.toLocaleString()}/人)
+            </span>
+            <input
+              className={styles.input}
+              type="number"
+              min={1}
+              max={100}
+              step={1}
+              value={qty}
+              onChange={(e) =>
+                setNormalHireQty((prev) => ({
+                  ...prev,
+                  [r]: Math.max(1, Math.min(100, Number(e.target.value) || 1)),
+                }))
+              }
+              style={{ width: 56 }}
+            />
+            <button
+              className={styles.btn}
+              disabled={funds < batchCost}
+              onClick={() => {
+                for (let i = 0; i < qty; i++) {
+                  game.executeCommand(new HireNormalEmployeeCommand(r));
+                }
+                setNormalHireQty((prev) => ({ ...prev, [r]: 1 }));
+              }}
+            >
+              批量招 {qty} 人 (${batchCost.toLocaleString()})
+            </button>
+          </div>
+        );
+      })}
 
       {/* 候选人列表 */}
       <div className={styles.empFilter}>

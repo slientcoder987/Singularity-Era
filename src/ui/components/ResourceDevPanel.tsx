@@ -84,10 +84,18 @@ export function ResourceDevPanel() {
         ))}
       </div>
 
-      {tab === 'funds' && <FundsTab game={game} />}
-      {tab === 'compute' && <ComputeTab game={game} />}
-      {tab === 'power' && <PowerTab game={game} />}
-      {tab === 'staff' && <StaffTab game={game} />}
+      <div style={{ display: tab === 'funds' ? 'block' : 'none' }}>
+        <FundsTab game={game} />
+      </div>
+      <div style={{ display: tab === 'compute' ? 'block' : 'none' }}>
+        <ComputeTab game={game} />
+      </div>
+      <div style={{ display: tab === 'power' ? 'block' : 'none' }}>
+        <PowerTab game={game} />
+      </div>
+      <div style={{ display: tab === 'staff' ? 'block' : 'none' }}>
+        <StaffTab game={game} />
+      </div>
     </section>
   );
 }

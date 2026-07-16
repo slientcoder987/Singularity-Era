@@ -100,13 +100,14 @@ export class RequestRecruitmentCommand implements Command {
     // 生成候选人
     const candidates: Candidate[] = [];
     for (let i = 0; i < channelCfg.candidateCount; i++) {
-      // 属性基础 = 渠道基础 + 地区人才加成 × 25
-      const baseAttr = channelCfg.baseAttribute + talentBonus * 25;
-      const attributes = generateCandidateAttributes(baseAttr, roleCfg.attributeWeights);
-
       // 等级：渠道范围内随机
       const [minLv, maxLv] = channelCfg.levelRange;
       const level = Math.floor(minLv + Math.random() * (maxLv - minLv + 1));
+
+      // 属性基础 = 渠道基础 + 地区人才加成 × 25
+      const baseAttr = channelCfg.baseAttribute + talentBonus * 25;
+      // 传入 level 让属性池总上限随等级变化
+      const attributes = generateCandidateAttributes(baseAttr, roleCfg.attributeWeights, level);
 
       // 预期薪资：按等级和地区计算
       const expectedSalary = calcSalaryForLevel(this.role, level, hqRegion);

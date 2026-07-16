@@ -13,6 +13,7 @@ import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { CompetitorState } from '../entities/Competitor';
 import type { ExternalCorp } from '../entities/Competitor';
+import { StaffRole } from '../entities/Employee';
 
 /** 1M = 1,000,000 */
 const M = 1_000_000;
@@ -93,7 +94,10 @@ export class AcquireCompetitorCommand implements Command {
 
     state.update((draft) => {
       draft.resources['funds'] = (draft.resources['funds'] ?? 0) - this.offerPrice + compFundsActual;
-      draft.resources['compute_h100'] = (draft.resources['compute_h100'] ?? 0) + compComputeUnits;
+      // BUG-20 修复：使用通用算力资源（TFLOPS），而非硬编码 H100
+      // 竞争对手硬件未知，收购后折算为等效算力增量
+      const tflopsGain = compComputeUnits * 500; // 每 unit ≈ 500 TFLOPS（1 H100）
+      draft.resources['compute_power'] = (draft.resources['compute_power'] ?? 0) + tflopsGain;
       // 从竞争列表移除
       const competitors = (draft as any).competitorStates as CompetitorState[];
       const idx = competitors.findIndex((c) => c.id === this.competitorId);
@@ -149,22 +153,65 @@ export class PoachTalentCommand implements Command {
       return;
     }
 
-    const poachedResearchers = Math.floor(
-      comp.coreResearchers * 0.15 * (1 + comp.infiltrationLevel * 0.5),
-    );
+    // 挖角仅获得 1 名核心研究员（对方的关键人才），而非批量低等级员工
+    const poachedResearchers = 1;
     const poachedHeadcount = Math.floor(
       comp.headcount * 0.05 * (1 + comp.infiltrationLevel * 0.3),
     );
 
     state.update((draft) => {
       draft.resources['funds'] = (draft.resources['funds'] ?? 0) - this.budget;
-      // 更新竞争对手（draft 内修改）
+      // 更新竞争对手（draft 内修改）：失去关键人才影响较大
       const competitors = (draft as any).competitorStates as CompetitorState[];
       const c = competitors.find((x) => x.id === this.competitorId);
       if (c) {
-        c.coreResearchers = Math.max(1, c.coreResearchers - poachedResearchers);
+        c.coreResearchers = Math.max(1, c.coreResearchers - 1);
         c.headcount = Math.max(1, c.headcount - poachedHeadcount);
         c.trainingProgress = Math.max(0, c.trainingProgress - 15);
+      }
+
+      // 检查核心员工上限（每种角色最多 CORE_EMPLOYEE_CAP_PER_ROLE 人）
+      const researcherCount = draft.employees.filter((e) => e.role === StaffRole.RESEARCHER).length;
+      const CORE_CAP = 10;
+
+      if (researcherCount < CORE_CAP) {
+        // 高级人才命名（更有辨识度）
+        const eliteNames = ['吴恩远', '陈天石', '李明达', '赵思齐', '刘鸿儒',
+          '王知远', '张启明', '杨致新', '黄尚文', 'Rafael'];
+        const name = eliteNames[Math.floor(Math.random() * eliteNames.length)];
+        const suffix = Math.random().toString(36).slice(2, 5);
+        // 8-10 级高级研究员，对应属性上限更高
+        const level = 8 + Math.floor(Math.random() * 3);
+        draft.employees.push({
+          id: `poached-${draft.date}-${suffix}`,
+          name: `${name} (${comp.name}挖角)`,
+          role: StaffRole.RESEARCHER,
+          attributes: {
+            intelligence: 65 + Math.floor(Math.random() * 30),
+            creativity: 55 + Math.floor(Math.random() * 35),
+            leadership: 30 + Math.floor(Math.random() * 40),
+            stamina: 40 + Math.floor(Math.random() * 40),
+            charisma: 25 + Math.floor(Math.random() * 40),
+          },
+          skills: [],
+          skillPoints: level - 3, // 高等级自带技能点
+          level,
+          salary: 400_000 + Math.random() * 600_000, // 高级人才薪资
+          loyalty: 35 + Math.random() * 25, // 挖来的人忠诚度偏低
+          fatigue: 10 + Math.random() * 15,
+          status: 'idle',
+          hireDay: draft.date,
+          experience: 300 + Math.random() * 3000,
+        });
+      }
+      // 普通员工入池（不受核心上限限制）
+      if (poachedHeadcount > 0) {
+        draft.resources['staff_data_engineer'] = (draft.resources['staff_data_engineer'] ?? 0)
+          + Math.floor(poachedHeadcount * 0.4);
+        draft.resources['staff_system_engineer'] = (draft.resources['staff_system_engineer'] ?? 0)
+          + Math.floor(poachedHeadcount * 0.3);
+        draft.resources['staff_product_manager'] = (draft.resources['staff_product_manager'] ?? 0)
+          + Math.floor(poachedHeadcount * 0.3);
       }
     });
 
@@ -185,7 +232,11 @@ export class AssaultKeyPersonnelCommand implements Command {
 
   execute(state: GameState, events: EventBus): void {
     const found = findComp(state, this.competitorId);
-    if (!found) return;
+    // BUG-18 修复：竞争对手不存在时给出明确反馈，而非静默返回
+    if (!found) {
+      events.emit('ASSAULT_FAILED', this.competitorId, '目标已不存在（可能已被收购或破产）');
+      return;
+    }
     const { comp } = found;
 
     // BUG-8 修复：袭击需要支付黑市费用，检查资金
@@ -247,7 +298,11 @@ export class HackParametersCommand implements Command {
 
   execute(state: GameState, events: EventBus): void {
     const found = findComp(state, this.competitorId);
-    if (!found) return;
+    // BUG-18 修复：竞争对手不存在时给出明确反馈，而非静默返回
+    if (!found) {
+      events.emit('HACK_FAILED', this.competitorId, '目标已不存在（可能已被收购或破产）');
+      return;
+    }
     const { comp } = found;
 
     // BUG-8 修复：黑客行动需要支付高额费用，检查资金

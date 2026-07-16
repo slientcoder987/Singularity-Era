@@ -4,6 +4,7 @@ import type { System } from '../interfaces/System';
 import { getCardSpec } from '../config/computeCards';
 import { calcActualPowerDraw, type WorkloadType } from '../utils/computeUtilization';
 import { getRegionModifiers } from './RegionSystem';
+import { getCompanyPowerReduction } from '../utils/crossSystemUtils';
 
 /**
  * InfraMaintenanceSystem
@@ -104,7 +105,9 @@ export class InfraMaintenanceSystem implements System {
       // 卡本身功耗电费由 PowerSystem 统一处理（超容购电或自建电站覆盖）
       // PUE 1.2 意味着每 1kW IT 负载需要额外 0.2kW 冷却功耗
       const regionMods = getRegionModifiers(current.headquartersRegionId);
-      const coolingOverheadKW = totalPowerKW * (effectivePue - 1);
+      // 改进 B：系统工程师 infra_efficiency 技能降低冷却功耗
+      const powerReduction = getCompanyPowerReduction(current);
+      const coolingOverheadKW = totalPowerKW * (effectivePue - 1) * (1 - powerReduction);
       const dailyPowerCost = coolingOverheadKW * 24 * dc.powerCostPerKWh * regionMods.energyMultiplier * deltaDays;
       totalDcPowerCost += dailyPowerCost;
 

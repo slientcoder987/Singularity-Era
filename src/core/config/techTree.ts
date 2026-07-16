@@ -32,7 +32,12 @@ export type TechId =
   | 'long_context_training'
   | 'auto_research'
   | 'alignment_v1'
-  | 'cev_alignment';
+  | 'cev_alignment'
+  // P2 并行策略
+  | 'pipeline_parallel'
+  | 'tensor_parallel'
+  | 'expert_parallel'
+  | 'context_parallel';
 
 /** 技术节点 */
 export interface TechNode {
@@ -247,8 +252,52 @@ export const TECH_TREE_P1: TechNode[] = [
   },
 ];
 
-/** P0 + P1 全部技术 */
-export const ALL_TECH: TechNode[] = [...TECH_TREE, ...TECH_TREE_P1];
+/** P2 技术节点：并行训练策略 */
+export const TECH_TREE_P2: TechNode[] = [
+  {
+    id: 'pipeline_parallel',
+    name: '流水线并行 (PP)',
+    description: '按层切分模型流水线传递激活值，降低单卡显存需求。bubble 开销 = 1/(2×段数)',
+    prerequisites: ['flash_attention_2'],
+    researchDays: 30,
+    researchCost: 200_000,
+    effect: { type: 'unlock_parallel_strategy', strategy: 'pp' },
+    isArchitecture: false,
+  },
+  {
+    id: 'tensor_parallel',
+    name: '张量并行 (TP)',
+    description: '按维度切开每层矩阵分担参数与计算。通信量极大，通常限制在单节点高速互联域内',
+    prerequisites: ['zero_1', 'pipeline_parallel'],
+    researchDays: 40,
+    researchCost: 350_000,
+    effect: { type: 'unlock_parallel_strategy', strategy: 'tp' },
+    isArchitecture: false,
+  },
+  {
+    id: 'expert_parallel',
+    name: '专家并行 (EP)',
+    description: 'MoE 专家分布到不同 GPU，支撑超大总参数量。需 MoE 架构，有负载不均风险',
+    prerequisites: ['moe', 'pipeline_parallel'],
+    researchDays: 45,
+    researchCost: 500_000,
+    effect: { type: 'unlock_parallel_strategy', strategy: 'ep' },
+    isArchitecture: false,
+  },
+  {
+    id: 'context_parallel',
+    name: '上下文并行 (CP)',
+    description: '按序列维度切分注意力计算，支撑超长上下文训练。Ring/Ulysses 混合路线',
+    prerequisites: ['rope', 'flash_attention_2'],
+    researchDays: 35,
+    researchCost: 300_000,
+    effect: { type: 'unlock_parallel_strategy', strategy: 'cp' },
+    isArchitecture: false,
+  },
+];
+
+/** P0 + P1 + P2 全部技术 */
+export const ALL_TECH: TechNode[] = [...TECH_TREE, ...TECH_TREE_P1, ...TECH_TREE_P2];
 
 /** 技术映射表 */
 export const TECH_MAP: Record<string, TechNode> =

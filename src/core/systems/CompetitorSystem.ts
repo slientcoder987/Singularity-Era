@@ -52,6 +52,9 @@ const SCANDAL_EVENTS = [
 export class CompetitorSystem implements System {
   name = 'CompetitorSystem';
 
+  /** 设计-20：上次记录的竞争对手数量，检测减少后触发恐慌 */
+  private lastCompetitorCount = 0;
+
   update(state: GameState, events: EventBus, _deltaDays: number): void {
     let current = state.read();
 
@@ -134,8 +137,10 @@ export class CompetitorSystem implements System {
     }
 
     // ★ 检测玩家模型发布 → 竞争对手加速训练
-    const playerBestCap = current.models.length > 0
-      ? Math.max(...current.models.map((m) => m.baseScore))
+    // BUG-19 修复：只用已发布模型的能力做追赶判断，未发布的实验室模型不应被市场感知
+    const publishedModels = current.models.filter((m) => m.published);
+    const playerBestCap = publishedModels.length > 0
+      ? Math.max(...publishedModels.map((m) => m.baseScore))
       : 0;
     for (const comp of competitors) {
       const compBestCap = Math.max(...Object.values(comp.capabilities));
@@ -156,6 +161,28 @@ export class CompetitorSystem implements System {
         }
       }
     }
+
+    // 设计-20：竞争对手消失恐慌——当竞争对手数量减少时（被收购或破产），
+    // 剩余竞争对手加速融资和训练，形成"兼并浪潮"效应
+    if (this.lastCompetitorCount > 0 && competitors.length < this.lastCompetitorCount) {
+      const panicFactor = 1 + (this.lastCompetitorCount - competitors.length) * 0.15; // 每少一家 +15%
+      for (const comp of competitors) {
+        comp.trainingProgress = Math.min(100, comp.trainingProgress + 5); // 恐慌性加速训练
+        comp.growthRate *= panicFactor; // 增长率临时提升
+        comp.funds += comp.burnRate * 3; // 紧急融资 3 个月运营资金
+        comp.intel.push({
+          id: genId(`intel-${comp.id}-${current.date}-panic`),
+          competitorId: comp.id,
+          type: 'funding',
+          title: `${comp.name} 加速扩张`,
+          description: `市场格局剧变，${comp.name} 紧急融资并加快研发以应对行业洗牌`,
+          day: current.date,
+          severity: 'warning',
+        });
+      }
+      events.emit('INDUSTRY_PANIC', this.lastCompetitorCount - competitors.length, competitors.length);
+    }
+    this.lastCompetitorCount = competitors.length;
 
     // 偶尔触发合并
     if (Math.random() < 0.05 && competitors.length >= 2) {
@@ -334,7 +361,12 @@ export class CompetitorSystem implements System {
 
   /** 合并事件（操作传入的 competitors 数组） */
   private triggerMerger(competitors: CompetitorState[], events: EventBus): void {
-    const idx1 = Math.floor(Math.random() * competitors.length);
+    // 设计-21：濒临破产的竞争对手（bankruptDays > 0）不能成为合并中的"强方"，
+    // 但仍可被其他公司吸收。通过过滤候选强方实现。
+    const healthyCandidates = competitors.filter((c) => (c.bankruptDays ?? 0) === 0);
+    if (healthyCandidates.length < 2) return; // 健康候选不足，取消合并
+
+    const idx1 = competitors.indexOf(healthyCandidates[Math.floor(Math.random() * healthyCandidates.length)]);
     let idx2: number;
     do { idx2 = Math.floor(Math.random() * competitors.length); } while (idx2 === idx1);
 
@@ -359,10 +391,12 @@ export class CompetitorSystem implements System {
     weakIdx: number,
     competitors: CompetitorState[],
   ): void {
-    strong.funds += weak.funds * 0.7;
-    strong.computeUnits += weak.computeUnits;
-    strong.headcount += Math.floor(weak.headcount * 0.6);
-    strong.coreResearchers += Math.floor(weak.coreResearchers * 0.5);
+    // 设计-21：若被吸收方濒临破产，吸收效益打折扣（烂资产拖累）
+    const weakHealth = (weak.bankruptDays ?? 0) > 0 ? 0.3 : 1.0;
+    strong.funds += weak.funds * 0.7 * weakHealth;
+    strong.computeUnits += weak.computeUnits * weakHealth;
+    strong.headcount += Math.floor(weak.headcount * 0.6 * weakHealth);
+    strong.coreResearchers += Math.floor(weak.coreResearchers * 0.5 * weakHealth);
     competitors.splice(weakIdx, 1);
   }
 }

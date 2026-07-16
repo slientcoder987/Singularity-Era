@@ -32,47 +32,29 @@ export function App() {
       <TopBar />
       <GameControls activeView={activeView} onViewChange={setActiveView} />
 
-      {activeView === 'resources' && (
-        <main className={styles.pageMain}>
+      <main className={styles.pageMain}>
+        <div style={{ display: activeView === 'resources' ? 'block' : 'none' }}>
           <ResourceDevPanel />
-        </main>
-      )}
-
-      {activeView === 'employees' && (
-        <main className={styles.pageMain}>
+        </div>
+        <div style={{ display: activeView === 'employees' ? 'block' : 'none' }}>
           <EmployeePanel />
-        </main>
-      )}
-
-      {activeView === 'infrastructure' && (
-        <main className={styles.pageMain}>
+        </div>
+        <div style={{ display: activeView === 'infrastructure' ? 'block' : 'none' }}>
           <InfrastructurePanel />
-        </main>
-      )}
-
-      {activeView === 'models' && (
-        <main className={styles.pageMain}>
+        </div>
+        <div style={{ display: activeView === 'models' ? 'block' : 'none' }}>
           <ModelPanel />
-        </main>
-      )}
-
-      {activeView === 'research' && (
-        <main className={styles.pageMain}>
+        </div>
+        <div style={{ display: activeView === 'research' ? 'block' : 'none' }}>
           <ResearchPanel />
-        </main>
-      )}
-
-      {activeView === 'business' && (
-        <main className={styles.pageMain}>
+        </div>
+        <div style={{ display: activeView === 'business' ? 'block' : 'none' }}>
           <BusinessPanel />
-        </main>
-      )}
-
-      {activeView === 'settings' && (
-        <main className={styles.pageMain}>
+        </div>
+        <div style={{ display: activeView === 'settings' ? 'block' : 'none' }}>
           <SettingsPanel />
-        </main>
-      )}
+        </div>
+      </main>
 
       <footer className={styles.footer}>
         Singularity.AI · 地区系统 + 训练过程 + 数据收集已启用 · core (纯 TS) ⇄ ui (React + CSS Modules)

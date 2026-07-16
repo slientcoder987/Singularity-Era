@@ -1,6 +1,7 @@
 import type { ComputeCardSpec } from '../entities/ComputeCard';
 import type { Cluster, ServerNode } from '../entities/Infrastructure';
 import type { GameState, CardInstance } from '../GameState';
+import type { ParallelConfig } from '../entities/TrainingProject';
 import { getCardSpec } from '../config/computeCards';
 
 /**
@@ -200,6 +201,8 @@ export function diagnoseTraining(
   _architecture: string,
   clusterId: string,
   state: GameState,
+  /** 可选：并行策略配置，用于准确估算每卡显存需求 */
+  parallelConfig?: ParallelConfig,
 ): DiagnosisIssue[] {
   const current = state.read();
   const issues: DiagnosisIssue[] = [];
@@ -241,11 +244,15 @@ export function diagnoseTraining(
     return issues;
   }
 
-  // 3. 估算显存需求
+  // 3. 估算显存需求（考虑并行策略的显存缩减）
   const paramB = paramCount; // 十亿
   const weightMem = paramB * 2;
   const activationMem = weightMem * 2.2;
-  const totalMemPerReplica = weightMem + activationMem;
+  const rawMemPerReplica = weightMem + activationMem;
+  // 并行缩减：PP 切层 + TP 切维度，有效单卡显存需求 = 原始 / (pp×tp)
+  const ppReducer = (parallelConfig?.ppStages ?? 1) > 1 ? parallelConfig!.ppStages : 1;
+  const tpReducer = (parallelConfig?.tpSize ?? 1) > 1 ? parallelConfig!.tpSize : 1;
+  const totalMemPerReplica = rawMemPerReplica / (ppReducer * tpReducer);
 
   // 4. 检查单卡显存
   const minCardMem = Math.min(...cardSpecs.map((s) => s.memoryGB));

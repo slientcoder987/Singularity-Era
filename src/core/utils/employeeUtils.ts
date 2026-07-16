@@ -124,21 +124,67 @@ export function calcSalaryForLevel(
   return Math.round(base * multiplier * regionMult);
 }
 
-/** 按招聘渠道生成候选人属性 */
+/**
+ * 按招聘渠道生成候选人属性
+ *
+ * 属性分布设计（修复满分员工易得 + 初始员工太弱两个问题）：
+ * 1. 5 维属性值总和受「属性池」约束，与渠道 baseAttr 和等级挂钩，0 维直接溢出。
+ *    - Lv1 总池 200~250（均值 50/维）
+ *    - Lv3 总池 280~320（均值 60/维）
+ *    - Lv5 总池 350~400（均值 75/维）
+ *    - Lv7 总池 410~460（均值 85/维）
+ * 2. 各维度按角色权重采样（带偏置的 Dirichlet）。
+ * 3. 极高分（≥90）极稀有——单维度 ≥ 90 的概率 < 12%。
+ * 4. 最低分不低于 25，避免出现废人。
+ * 5. 校招/社招直接生成；猎头有"明星条款"——候选人中 1 个为 8~10 级。
+ */
 export function generateCandidateAttributes(
   baseAttr: number,
   roleWeights: Partial<StaffAttributes>,
+  /** 候选人等级（影响属性池总上限） */
+  level: number = 1,
 ): StaffAttributes {
   const keys: (keyof StaffAttributes)[] = ['intelligence', 'creativity', 'leadership', 'stamina', 'charisma'];
+
+  // 1. 计算总属性池（等级越高，总池越大）
+  const tierMin = level <= 2 ? 200 : level <= 4 ? 280 : level <= 6 ? 350 : 410;
+  const tierMax = level <= 2 ? 250 : level <= 4 ? 320 : level <= 6 ? 400 : 460;
+  const totalPool = tierMin + Math.random() * (tierMax - tierMin) + (baseAttr - 65) * 0.5;
+
+  // 2. 用带权重的 Dirichlet 采样分配池子
+  //    权重归一化后用 Gamma 分布采样得到 5 个分量
+  const rawWeights = keys.map((k) => (roleWeights[k] ?? 0.1) * 2 + 0.3);
+  const samples: number[] = rawWeights.map((w) => {
+    // Gamma(k=2, θ=w/2) 简化采样
+    const u1 = Math.random() || 0.001;
+    const u2 = Math.random() || 0.001;
+    const gamma = -2 * Math.log(u1) * Math.cos(2 * Math.PI * u2) + 2;
+    return Math.max(0.01, w * gamma);
+  });
+  const sumSamples = samples.reduce((s, v) => s + v, 0);
+  const proportions = samples.map((v) => v / sumSamples);
+
+  // 3. 按比例分配总池，再加少量噪声
   const result = {} as StaffAttributes;
-  for (const key of keys) {
-    const weight = roleWeights[key] ?? 0.1;
-    // 基础 baseAttr ± 15 + 权重 × 20
-    const variance = (Math.random() - 0.5) * 30;
-    const bonus = weight * 20;
-    result[key] = clamp(Math.round(baseAttr + variance + bonus), 30, 100);
-  }
+  keys.forEach((k, i) => {
+    const noise = (Math.random() - 0.5) * 8; // ±4 噪声
+    const raw = totalPool * proportions[i] + noise;
+    // 4. 截断到 [25, 99]——避免极端值
+    result[k] = clamp(Math.round(raw), 25, 99);
+  });
+
   return result;
+}
+
+/**
+ * 按等级获取默认属性池（用于命令创建员工时无 baseAttr 的情况）
+ */
+export function getDefaultAttributePool(level: number): number {
+  if (level <= 2) return 220 + Math.random() * 30;
+  if (level <= 4) return 290 + Math.random() * 30;
+  if (level <= 6) return 360 + Math.random() * 40;
+  if (level <= 8) return 410 + Math.random() * 50;
+  return 440 + Math.random() * 50;
 }
 
 /** 离职概率 */

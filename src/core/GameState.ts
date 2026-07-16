@@ -43,6 +43,8 @@ export interface CardInstance {
   purchasedAt: number;
   /** 所在服务器节点 id（未安装为 null） */
   location: string | null;
+  /** 自动恢复日期（minor 故障后 offline → online 的到期日，broken 不适用） */
+  autoRecoverDay?: number;
 }
 
 /**

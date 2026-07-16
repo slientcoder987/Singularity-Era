@@ -31,12 +31,15 @@ function getDepartment(data: GameData, type: DepartmentType): { dept: Department
 /**
  * 研究员对训练项目的加速倍率
  *
- * 每位研究员（无论是否分配到此项目）贡献：
- *   efficiency × 0.5% → 总加速倍率
+ * 改进 C：分配状态产生实际差异
+ * - 已分配到该项目的核心研究员：× efficiency × 1.5%（定向贡献）
+ * - 未分配的核心研究员：× efficiency × 0.3%（被动"公司氛围"贡献）
  *
- * 如果研究员有 learning_rate_optimizer 技能，额外 +1%
+ * 技能加成：reduce_training_compute 技能额外 +50% 加成权重
+ *
+ * 递减回报：log(1 + n) / log(11) 使得 10 个满效率研究员 = 1.3x
  */
-export function getStaffTrainingSpeedMultiplier(data: GameData): number {
+export function getStaffTrainingSpeedMultiplier(data: GameData, projectId?: string): number {
   const researchers = getActiveStaffByRole(data, StaffRole.RESEARCHER);
   if (researchers.length === 0) return 1.0;
 
@@ -44,9 +47,12 @@ export function getStaffTrainingSpeedMultiplier(data: GameData): number {
   for (const r of researchers) {
     const eff = calcEmployeeEfficiency(r, data.departments, data.employees);
     const hasOptimizer = r.skills.some((s) => s.unlocked && s.effect.type === 'reduce_training_compute');
-    totalBonus += eff * 0.005 * (hasOptimizer ? 1.5 : 1.0);
+    // 改进 C：定向贡献 1.5% vs 被动贡献 0.3%
+    const directWeight = r.assignedProjectId === projectId && projectId !== undefined ? 0.015 : 0.003;
+    const weight = directWeight * (hasOptimizer ? 1.5 : 1.0);
+    totalBonus += eff * weight;
   }
-  // 递减回报：log(1 + n) / log(11) 使得 10 个满效率研究员 = 1.3x, 而非 1 + 0.05 = 1.5x
+  // 递减回报：log(1 + n) / log(11) 使得 10 个满效率研究员 = 1.3x, 而非 1 + 0.15 = 1.15x
   const diminishing = Math.log(1 + researchers.length) / Math.log(11);
   return 1.0 + totalBonus * diminishing;
 }
@@ -177,4 +183,161 @@ export function accumulateResearcherContribution(
       emp.monthlyContribution = (emp.monthlyContribution ?? 0) + contributionPerDay;
     }
   }
+}
+
+/**
+ * 数据工程师对数据收集项目的效率加成
+ *
+ * - 定向加成：已分配到该项目的工程师 × efficiency × 5%
+ * - 被动加成：未分配但作为部门成员 × efficiency × 1%
+ * - 数据质量加成：数据工程师的 creativity 维度影响收集质量
+ *
+ * 返回 { speedMultiplier, qualityBonus }
+ * - speedMultiplier: 1.0~2.0
+ * - qualityBonus: 0~0.15 (与 route.baseQuality 相加)
+ */
+export function getDataEngineerBonus(
+  data: GameData,
+  _projectId: string,
+  assignedIds: string[],
+): { speedMultiplier: number; qualityBonus: number } {
+  const allDataEngineers = getActiveStaffByRole(data, StaffRole.DATA_ENGINEER);
+  if (allDataEngineers.length === 0) return { speedMultiplier: 1.0, qualityBonus: 0 };
+
+  let directBonus = 0;
+  let passiveBonus = 0;
+  let qualityBonus = 0;
+  const assignedSet = new Set(assignedIds);
+
+  for (const eng of allDataEngineers) {
+    const eff = calcEmployeeEfficiency(eng, data.departments, data.employees);
+    if (assignedSet.has(eng.id)) {
+      // 定向：大幅加成采集速度
+      directBonus += eff * 0.05;
+    } else {
+      // 被动：仅作为部门成员小幅加成（"团队氛围"）
+      passiveBonus += eff * 0.01;
+    }
+    // 数据工程师的 creativity 影响质量（数据清洗/标注能力）
+    qualityBonus += (eng.attributes.creativity / 100) * 0.005;
+  }
+  return {
+    speedMultiplier: 1.0 + directBonus + passiveBonus,
+    qualityBonus: Math.min(0.15, qualityBonus),
+  };
+}
+
+/**
+ * 收集所有员工解锁技能对某系统的加成
+ *
+ * 用法：
+ *   const bonus = getCompanySkillBonus(data, 'reduce_training_compute');
+ *   trainingCost *= 1 - bonus;
+ *
+ * 性能：O(n)，n=员工数，每日调用一次可接受
+ */
+export function getCompanySkillBonus(data: GameData, effectType: string): number {
+  let total = 0;
+  for (const emp of data.employees) {
+    if (emp.status === 'training') continue;
+    for (const skill of emp.skills) {
+      if (skill.unlocked && skill.effect.type === effectType) {
+        total += skill.effect.value;
+      }
+    }
+  }
+  return total;
+}
+
+/**
+ * 收集所有员工解锁技能的最大值（用于"团队协调"等"取最大"型技能）
+ */
+export function getCompanySkillMax(data: GameData, effectType: string): number {
+  let max = 0;
+  for (const emp of data.employees) {
+    if (emp.status === 'training') continue;
+    for (const skill of emp.skills) {
+      if (skill.unlocked && skill.effect.type === effectType) {
+        if (skill.effect.value > max) max = skill.effect.value;
+      }
+    }
+  }
+  return max;
+}
+
+/**
+ * 计算公司范围的电力消耗降低（系统工程师的 infra_efficiency 技能）
+ */
+export function getCompanyPowerReduction(data: GameData): number {
+  return Math.min(0.5, getCompanySkillBonus(data, 'reduce_power_consumption'));
+}
+
+/**
+ * 计算公司范围的卡故障率降低（系统工程师的 reduce_card_wear 技能）
+ */
+export function getCompanyCardWearReduction(data: GameData): number {
+  return Math.min(0.5, getCompanySkillBonus(data, 'reduce_card_wear'));
+}
+
+/**
+ * 计算公司范围的收入加成（产品经理的 market_insight 技能）
+ */
+export function getCompanyRevenueBoost(data: GameData): number {
+  return getCompanySkillBonus(data, 'revenue_boost');
+}
+
+/**
+ * 计算公司范围的合规度加成（法务的 compliance_boost 技能）
+ */
+export function getCompanyComplianceBoost(data: GameData): number {
+  return getCompanySkillMax(data, 'compliance');
+}
+
+/**
+ * 计算公司范围的危机削减（法务的 crisis_management 技能）
+ */
+export function getCompanyCrisisReduction(data: GameData): number {
+  return Math.min(0.7, getCompanySkillMax(data, 'crisis_reduction'));
+}
+
+/**
+ * 计算训练算力减少（研究员的 reduce_training_compute 技能）
+ */
+export function getCompanyTrainingComputeReduction(data: GameData): number {
+  return Math.min(0.5, getCompanySkillBonus(data, 'reduce_training_compute'));
+}
+
+/**
+ * 计算采集速度加成（数据工程师的 pipeline_optimization 技能）
+ */
+export function getCompanyCollectionSpeed(data: GameData): number {
+  return getCompanySkillBonus(data, 'data_speed');
+}
+
+/**
+ * 计算数据质量加成（数据工程师的 data_quality_boost 技能，叠加）
+ */
+export function getCompanyDataQuality(data: GameData): number {
+  return getCompanySkillBonus(data, 'data_quality');
+}
+
+/**
+ * 计算研发速度加成（研究员的 research_breakthrough 技能）
+ */
+export function getCompanyResearchSpeed(data: GameData): number {
+  return getCompanySkillBonus(data, 'research_speed');
+}
+
+/**
+ * 计算额外可同时训练模型数（研究员的 increase_model_cap 技能）
+ */
+export function getCompanyModelCap(data: GameData): number {
+  return getCompanySkillBonus(data, 'increase_model_cap');
+}
+
+/**
+ * 计算团队协调加成（产品经理的 team_coordination 技能）
+ */
+export function getCompanyTeamCoordination(data: GameData): number {
+  return Math.min(0.3, getCompanySkillBonus(data, 'team_efficiency'));
 }

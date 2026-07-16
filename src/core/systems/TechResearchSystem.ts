@@ -7,6 +7,7 @@ import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { TECH_MAP } from '../config/techTree';
+import { getCompanyResearchSpeed } from '../utils/crossSystemUtils';
 
 export class TechResearchSystem implements System {
   name = 'TechResearchSystem';
@@ -19,7 +20,9 @@ export class TechResearchSystem implements System {
     const tech = TECH_MAP[research.techId];
     if (!tech) return;
 
-    const newProgress = research.progressDays + deltaDays;
+    // 改进 B：research_breakthrough 技能加速研发
+    const researchSpeedMult = 1 + getCompanyResearchSpeed(current);
+    const newProgress = research.progressDays + deltaDays * researchSpeedMult;
     const isCompleted = newProgress >= research.totalDays;
 
     state.update((draft) => {

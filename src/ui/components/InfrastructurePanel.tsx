@@ -54,8 +54,12 @@ export function InfrastructurePanel() {
         ))}
       </div>
 
-      {tab === 'topology' && <TopologyTab />}
-      {tab === 'build' && <BuildTab game={game} />}
+      <div style={{ display: tab === 'topology' ? 'block' : 'none' }}>
+        <TopologyTab />
+      </div>
+      <div style={{ display: tab === 'build' ? 'block' : 'none' }}>
+        <BuildTab game={game} />
+      </div>
     </section>
   );
 }
@@ -260,7 +264,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
   const [nodeBuyQty, setNodeBuyQty] = useState<Record<string, number>>({});
 
   // 自动安装
-  const [autoInstallNodeId, setAutoInstallNodeId] = useState<string>('');
+  const [autoInstallNodeIds, setAutoInstallNodeIds] = useState<Set<string>>(new Set());
   const [autoInstallCardModel, setAutoInstallCardModel] = useState<string>('');
 
   // 集群追加节点
@@ -413,20 +417,6 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
           <div className={styles.devRow}>
             <select
               className={styles.select}
-              value={autoInstallNodeId}
-              onChange={(e) => setAutoInstallNodeId(e.target.value)}
-            >
-              <option value="">选择节点...</option>
-              {serverNodes
-                .filter((n) => n.installedCards.length < n.slotCount)
-                .map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.name} ({n.installedCards.length}/{n.slotCount} · 空{n.slotCount - n.installedCards.length}槽)
-                  </option>
-                ))}
-            </select>
-            <select
-              className={styles.select}
               value={autoInstallCardModel}
               onChange={(e) => setAutoInstallCardModel(e.target.value)}
             >
@@ -440,25 +430,82 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
                 );
               })}
             </select>
+            <span className={styles.devHint}>
+              已选 {autoInstallNodeIds.size} 节点
+            </span>
+          </div>
+          <div className={styles.devRow}>
             <button
               className={styles.btn}
-              disabled={!autoInstallNodeId}
+              style={{ fontSize: 12, padding: '2px 10px' }}
               onClick={() => {
-                const node = serverNodes.find((n) => n.id === autoInstallNodeId);
-                if (!node) return;
-                const availableSlots = node.slotCount - node.installedCards.length;
+                const eligibleIds = serverNodes
+                  .filter((n) => n.installedCards.length < n.slotCount)
+                  .map((n) => n.id);
+                setAutoInstallNodeIds(new Set(eligibleIds));
+              }}
+            >
+              全选
+            </button>
+            <button
+              className={styles.btn}
+              style={{ fontSize: 12, padding: '2px 10px' }}
+              onClick={() => setAutoInstallNodeIds(new Set())}
+            >
+              取消全选
+            </button>
+          </div>
+          {serverNodes
+            .filter((n) => n.installedCards.length < n.slotCount)
+            .map((n) => {
+              const checked = autoInstallNodeIds.has(n.id);
+              const empty = n.slotCount - n.installedCards.length;
+              return (
+                <label key={n.id} className={styles.devRow} style={{ cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      setAutoInstallNodeIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(n.id)) next.delete(n.id);
+                        else next.add(n.id);
+                        return next;
+                      });
+                    }}
+                    style={{ marginRight: '6px' }}
+                  />
+                  <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                    {n.name} ({n.installedCards.length}/{n.slotCount} · 空{empty}槽)
+                  </span>
+                </label>
+              );
+            })}
+          <div className={styles.devRow}>
+            <button
+              className={styles.btn}
+              disabled={autoInstallNodeIds.size === 0}
+              onClick={() => {
                 const candidates = uninstalledCards.filter(
                   (c) => !autoInstallCardModel || c.modelId === autoInstallCardModel,
                 );
-                const toInstall = candidates.slice(0, availableSlots);
-                for (const card of toInstall) {
-                  game.executeCommand(new InstallCardCommand(card.uid, autoInstallNodeId));
+                let cardIdx = 0;
+                for (const nodeId of autoInstallNodeIds) {
+                  const node = serverNodes.find((n) => n.id === nodeId);
+                  if (!node) continue;
+                  const availableSlots = node.slotCount - node.installedCards.length;
+                  const toInstall = candidates.slice(cardIdx, cardIdx + availableSlots);
+                  for (const card of toInstall) {
+                    game.executeCommand(new InstallCardCommand(card.uid, nodeId));
+                  }
+                  cardIdx += availableSlots;
+                  if (cardIdx >= candidates.length) break;
                 }
-                setAutoInstallNodeId('');
+                setAutoInstallNodeIds(new Set());
                 setAutoInstallCardModel('');
               }}
             >
-              自动填满 ({uninstalledCards.filter((c) => !autoInstallCardModel || c.modelId === autoInstallCardModel).length} 张可用)
+              批量安装 ({uninstalledCards.filter((c) => !autoInstallCardModel || c.modelId === autoInstallCardModel).length} 张可用)
             </button>
           </div>
         </>
@@ -490,22 +537,43 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
           {freeNodesForCluster.length === 0 ? (
             <div className={styles.devHint}>没有可用的独立节点</div>
           ) : (
-            freeNodesForCluster.map((n) => {
-              const checked = selectedNodeIds.has(n.id);
-              return (
-                <label key={n.id} className={styles.devRow} style={{ cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleNodeId(n.id)}
-                    style={{ marginRight: '6px' }}
-                  />
-                  <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
-                    {n.name} ({n.installedCards.length}/{n.slotCount}卡 · {n.interconnect} · {n.interconnectBandwidth}GB/s)
-                  </span>
-                </label>
-              );
-            })
+            <>
+              <div className={styles.devRow}>
+                <button
+                  className={styles.btn}
+                  style={{ fontSize: 12, padding: '2px 10px' }}
+                  onClick={() => {
+                    const limit = Math.min(freeNodesForCluster.length, selectedNetwork.maxNodes);
+                    setSelectedNodeIds(new Set(freeNodesForCluster.slice(0, limit).map((n) => n.id)));
+                  }}
+                >
+                  全选
+                </button>
+                <button
+                  className={styles.btn}
+                  style={{ fontSize: 12, padding: '2px 10px' }}
+                  onClick={() => setSelectedNodeIds(new Set())}
+                >
+                  取消全选
+                </button>
+              </div>
+              {freeNodesForCluster.map((n) => {
+                const checked = selectedNodeIds.has(n.id);
+                return (
+                  <label key={n.id} className={styles.devRow} style={{ cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleNodeId(n.id)}
+                      style={{ marginRight: '6px' }}
+                    />
+                    <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                      {n.name} ({n.installedCards.length}/{n.slotCount}卡 · {n.interconnect} · {n.interconnectBandwidth}GB/s)
+                    </span>
+                  </label>
+                );
+              })}
+            </>
           )}
           <div className={styles.devRow}>
             <span className={styles.devHint}>
@@ -559,6 +627,25 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
             }
             return (
               <>
+                <div className={styles.devRow}>
+                  <button
+                    className={styles.btn}
+                    style={{ fontSize: 12, padding: '2px 10px' }}
+                    onClick={() => {
+                      const limit = Math.min(freeNodesForCluster.length, remainingSlots);
+                      setAddNodeIds(new Set(freeNodesForCluster.slice(0, limit).map((n) => n.id)));
+                    }}
+                  >
+                    全选
+                  </button>
+                  <button
+                    className={styles.btn}
+                    style={{ fontSize: 12, padding: '2px 10px' }}
+                    onClick={() => setAddNodeIds(new Set())}
+                  >
+                    取消全选
+                  </button>
+                </div>
                 {freeNodesForCluster.slice(0, remainingSlots).map((n) => {
                   const checked = addNodeIds.has(n.id);
                   return (

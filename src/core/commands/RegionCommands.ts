@@ -8,6 +8,8 @@ import { StaffRole } from '../entities/Employee';
 import { HARDWARE_SPECS } from '../config/resources';
 import type { StartupPreset } from '../config/startupPresets';
 import { DEPARTMENT_ROLE_MAP } from '../entities/Department';
+import { ROLE_CONFIG } from '../config/employees';
+import { generateCandidateAttributes } from '../utils/employeeUtils';
 
 /** 生成随机姓名（根据地区语言） */
 function generateName(regionId: string): string {
@@ -191,13 +193,11 @@ export class SetHeadquartersCommand implements Command {
             loyalty: 75,
             fatigue: 0,
             hireDay: draft.date,
-            attributes: {
-              intelligence: 60 + Math.floor(Math.random() * 25),
-              creativity: 50 + Math.floor(Math.random() * 25),
-              leadership: 30 + Math.floor(Math.random() * 25),
-              stamina: 55 + Math.floor(Math.random() * 20),
-              charisma: 40 + Math.floor(Math.random() * 20),
-            },
+            attributes: generateCandidateAttributes(
+              ROLE_CONFIG[empCfg.role].displayName === '研究员' ? 75 : 65,
+              ROLE_CONFIG[empCfg.role].attributeWeights,
+              empCfg.level,
+            ),
             departmentId: null,
             trainingId: null,
             hasEquity: false,

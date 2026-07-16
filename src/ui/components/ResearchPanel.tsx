@@ -48,9 +48,15 @@ export function ResearchPanel() {
         ))}
       </div>
 
-      {tab === 'experiment' && <ExperimentTab />}
-      {tab === 'tech' && <TechTab />}
-      {tab === 'risk' && <RiskTab />}
+      <div style={{ display: tab === 'experiment' ? 'block' : 'none' }}>
+        <ExperimentTab />
+      </div>
+      <div style={{ display: tab === 'tech' ? 'block' : 'none' }}>
+        <TechTab />
+      </div>
+      <div style={{ display: tab === 'risk' ? 'block' : 'none' }}>
+        <RiskTab />
+      </div>
     </section>
   );
 }

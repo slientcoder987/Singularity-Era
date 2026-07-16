@@ -1,5 +1,6 @@
 import type { ComputeCardSpec } from '../entities/ComputeCard';
 import type { Cluster, DataCenter, TechEffect } from '../entities/Infrastructure';
+import type { ParallelConfig } from '../entities/TrainingProject';
 import { getCoolingType } from '../config/infrastructure';
 import { clamp } from '../utils';
 
@@ -39,6 +40,8 @@ export interface ModelParams {
   paramCount: number;
   /** 架构类型 */
   architecture: string;
+  /** 并行策略配置（可选，影响模型-显存适配和并行效率） */
+  parallelConfig?: ParallelConfig;
 }
 
 /** 工作负载类型 */
@@ -180,12 +183,127 @@ function calcPowerFactor(totalPowerMW: number, maxPowerMW: number): number {
 }
 
 /**
- * 计算有效算力
+ * ========================================================================
+ * 并行策略效率计算
  *
- * utilization = softwareUtil × clusterUtil × (1 + coolingBonus) × powerFactor
- *               × parallelEfficiency × (1 - interconnectPenalty)
- *               × (1 - crossNodePenalty) × scalePenalty × homogeneityFactor
+ * 五种并行策略各有不同的收益和代价，可组合使用（3D 混合并行）。
+ * 参考 GPT-4 / Llama-3 等实际训练集群的工程数据设计数值。
+ * ========================================================================
  */
+
+/**
+ * PP 流水线气泡开销
+ *
+ * 公式：bubbleRatio = (ppStages - 1) / (ppStages × microBatches)
+ * 近似 microBatches ≈ ppStages × 2（足够多的 micro-batch 填充流水线）：
+ *   → bubbleRatio ≈ (ppStages - 1) / (2 × ppStages²)
+ *   → ppEfficiency = 1 - (ppStages - 1) / (2 × ppStages²)
+ *     = (2*ppStages² - ppStages + 1) / (2*ppStages²)
+ *
+ * 简化近似（与 GPT-4 训练模拟对齐）：
+ *   ppEfficiency ≈ (ppStages + 1) / (2 × ppStages)
+ */
+function calcPPEfficiency(ppStages: number): number {
+  if (ppStages <= 1) return 1.0;
+  return clamp((ppStages + 1) / (2 * ppStages), 0.4, 1.0);
+}
+
+/**
+ * TP 通信开销
+ *
+ * 每层前向+反向需要 all-reduce。NVLink 带宽充足时开销较小。
+ *
+ * NVLink ≥ 4 代:  每次 all-reduce 开销 ≈ 3% → tpOverhead = 1 - (tpSize - 1) × 0.03
+ * NVLink 1-3 代:  开销 ≈ 6%       → tpOverhead = 1 - (tpSize - 1) × 0.06
+ * 无 NVLink:       开销 ≈ 12%      → tpOverhead = 1 - (tpSize - 1) × 0.12
+ */
+function calcTPEfficiency(tpSize: number, cardSpecs: ComputeCardSpec[]): number {
+  if (tpSize <= 1) return 1.0;
+  const minNVLinkGen = Math.min(
+    ...cardSpecs.map((s) => {
+      const gen = parseInt((s.interconnect ?? '').replace('NVLink', ''), 10);
+      return isNaN(gen) ? 0 : gen;
+    }),
+  );
+  const perCardOverhead = minNVLinkGen >= 4 ? 0.03 : minNVLinkGen >= 1 ? 0.06 : 0.12;
+  return clamp(1 - (tpSize - 1) * perCardOverhead, 0.4, 1.0);
+}
+
+/**
+ * DP 梯度同步开销
+ *
+ * 每 replica 增加一次 all-reduce 通信，规模越大越明显。
+ * dpOverhead = 1 - log₂(dpReplicas) × 0.02
+ */
+function calcDPEfficiency(dpReplicas: number): number {
+  if (dpReplicas <= 1) return 1.0;
+  return clamp(1 - Math.log2(dpReplicas) * 0.02, 0.6, 1.0);
+}
+
+/**
+ * EP 专家并行效率
+ *
+ * MoE 路由：token → expert 的分配不均匀（load imbalance）导致部分 GPU 闲置。
+ * 基础负载不均 5%，每增加一组 expert 额外 2%。
+ */
+function calcEPEfficiency(epGroups: number): number {
+  if (epGroups <= 1) return 1.0;
+  return clamp(1 - 0.05 - (epGroups - 1) * 0.02, 0.6, 1.0);
+}
+
+/**
+ * CP 上下文并行通信开销
+ *
+ * Ring Attention / Ulysses 需要跨序列维度通信。
+ * overhead = log₂(cpSize) × 0.03
+ */
+function calcCPEfficiency(cpSize: number): number {
+  if (cpSize <= 1) return 1.0;
+  return clamp(1 - Math.log2(cpSize) * 0.03, 0.5, 1.0);
+}
+
+/**
+ * 计算并行策略的综合效率乘数
+ *
+ * 返回 0-1 的值，乘到总利用率上。
+ */
+function calcParallelStrategyEfficiency(
+  parallelConfig: ParallelConfig,
+  cardSpecs: ComputeCardSpec[],
+  architecture: string,
+): number {
+  const pp = parallelConfig.ppStages > 1 ? calcPPEfficiency(parallelConfig.ppStages) : 1.0;
+  const tp = parallelConfig.tpSize > 1 ? calcTPEfficiency(parallelConfig.tpSize, cardSpecs) : 1.0;
+  const dp = parallelConfig.dpReplicas > 1 ? calcDPEfficiency(parallelConfig.dpReplicas) : 1.0;
+  const ep = (parallelConfig.epGroups > 1 && architecture === 'moe')
+    ? calcEPEfficiency(parallelConfig.epGroups) : 1.0;
+  const cp = parallelConfig.cpSize > 1 ? calcCPEfficiency(parallelConfig.cpSize) : 1.0;
+
+  return pp * tp * dp * ep * cp;
+}
+
+/**
+ * 并行策略减少的有效显存需求
+ *
+ * PP 把模型层切分到多个阶段 → 每阶段只需 1/ppStages
+ * TP 把每层参数沿维度切分   → 每 rank 只需 1/tpSize
+ *
+ * 组合后：effectiveMem = totalMem / (ppStages × tpSize)
+ */
+function calcParallelMemoryReduction(parallelConfig: ParallelConfig): number {
+  const pp = parallelConfig.ppStages > 1 ? parallelConfig.ppStages : 1;
+  const tp = parallelConfig.tpSize > 1 ? parallelConfig.tpSize : 1;
+  return pp * tp;
+}
+
+/**
+ * 并行策略支持的最大上下文长度乘数
+ *
+ * CP 按序列维度切分注意力，线性扩展最大上下文。
+ */
+export function calcParallelMaxContext(parallelConfig: ParallelConfig): number {
+  return parallelConfig.cpSize > 1 ? parallelConfig.cpSize : 1;
+}
 export function calculateEffectiveCompute(
   cardSpecs: ComputeCardSpec[],
   cluster?: Cluster,
@@ -267,9 +385,19 @@ export function calculateEffectiveCompute(
   let parallelEfficiency = 1.0;
   let requiresParallel = false;
   let parallelSize = 1;
+  let strategyEfficiency = 1.0;
+  let parallelMemReduction = 1;
 
   if (modelParams) {
-    const requiredMem = estimateRequiredMemory(modelParams);
+    // 并行策略减少有效显存需求
+    const pc = modelParams.parallelConfig;
+    if (pc) {
+      parallelMemReduction = calcParallelMemoryReduction(pc);
+      strategyEfficiency = calcParallelStrategyEfficiency(pc, cardSpecs, modelParams.architecture);
+    }
+
+    // 实际每卡需要承载的显存 = 总需求 / 并行内存缩减
+    const requiredMem = estimateRequiredMemory(modelParams) / parallelMemReduction;
     const minCardMem = Math.min(...cardSpecs.map((s) => s.memoryGB));
 
     if (requiredMem > minCardMem) {
@@ -285,7 +413,14 @@ export function calculateEffectiveCompute(
       }
       const extraCards = parallelSize - 1;
       parallelEfficiency = clamp(1 - extraCards * perCardLoss, 0.3, 1);
-      bottlenecks.push(`模型并行 (${parallelSize} 卡)`);
+      if (pc && (pc.ppStages > 1 || pc.tpSize > 1)) {
+        bottlenecks.push(`${pc.ppStages > 1 ? `PP×${pc.ppStages}` : ''}${pc.ppStages > 1 && pc.tpSize > 1 ? '+' : ''}${pc.tpSize > 1 ? `TP×${pc.tpSize}` : ''}并行 (${parallelSize} 卡)`);
+      } else {
+        bottlenecks.push(`模型并行 (${parallelSize} 卡)`);
+      }
+    } else if (pc && (pc.ppStages > 1 || pc.tpSize > 1 || pc.epGroups > 1 || pc.cpSize > 1)) {
+      // 模型能放进单卡但仍启用了高级并行策略 → 冗余配置，收益仅来自策略效率
+      bottlenecks.push(`高级并行（显存充裕，仅效率影响）`);
     }
   }
 
@@ -329,8 +464,10 @@ export function calculateEffectiveCompute(
   }
 
   // ===== 综合利用率 =====
+  // 并行策略效率乘数 (strategyEfficiency) 计入总利用率
   const utilization = clamp(
     softwareUtil * clusterUtil * (1 + coolingBonus) * powerFactor * parallelEfficiency
+      * strategyEfficiency
       * (1 - interconnectPenalty) * (1 - crossNodePenalty) * scalePenalty * homogeneityFactor,
     0,
     0.98,

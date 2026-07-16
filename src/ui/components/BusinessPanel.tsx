@@ -57,7 +57,7 @@ export function BusinessPanel() {
         ))}
       </div>
 
-      {tab === 'regions' && (
+      <div style={{ display: tab === 'regions' ? 'block' : 'none' }}>
         <RegionsTab
           game={game}
           headquartersRegionId={headquartersRegionId}
@@ -65,10 +65,16 @@ export function BusinessPanel() {
           publishedRegions={publishedRegions}
           funds={funds}
         />
-      )}
-      {tab === 'operations' && <OperationsTab game={game} />}
-      {tab === 'funding' && <FundingTab game={game} />}
-      {tab === 'competitive' && <CompetitiveTab game={game} />}
+      </div>
+      <div style={{ display: tab === 'operations' ? 'block' : 'none' }}>
+        <OperationsTab game={game} />
+      </div>
+      <div style={{ display: tab === 'funding' ? 'block' : 'none' }}>
+        <FundingTab game={game} />
+      </div>
+      <div style={{ display: tab === 'competitive' ? 'block' : 'none' }}>
+        <CompetitiveTab game={game} />
+      </div>
     </section>
   );
 }

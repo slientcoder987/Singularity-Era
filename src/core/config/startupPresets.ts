@@ -42,8 +42,9 @@ export const STARTUP_PRESETS: StartupPreset[] = [
       { modelId: 'compute_h100', count: 8 },
     ],
     employees: [
-      { role: StaffRole.RESEARCHER, level: 3, count: 2 },
-      { role: StaffRole.DATA_ENGINEER, level: 2, count: 1 },
+      { role: StaffRole.RESEARCHER, level: 7, count: 1 },
+      { role: StaffRole.RESEARCHER, level: 5, count: 1 },
+      { role: StaffRole.DATA_ENGINEER, level: 5, count: 1 },
     ],
   },
   {
@@ -55,10 +56,11 @@ export const STARTUP_PRESETS: StartupPreset[] = [
       { modelId: 'compute_h100', count: 32 },
     ],
     employees: [
-      { role: StaffRole.RESEARCHER, level: 5, count: 3 },
-      { role: StaffRole.DATA_ENGINEER, level: 3, count: 2 },
-      { role: StaffRole.SYSTEM_ENGINEER, level: 3, count: 1 },
-      { role: StaffRole.PRODUCT_MANAGER, level: 3, count: 1 },
+      { role: StaffRole.RESEARCHER, level: 7, count: 1 },
+      { role: StaffRole.RESEARCHER, level: 5, count: 2 },
+      { role: StaffRole.DATA_ENGINEER, level: 5, count: 2 },
+      { role: StaffRole.SYSTEM_ENGINEER, level: 5, count: 1 },
+      { role: StaffRole.PRODUCT_MANAGER, level: 5, count: 1 },
     ],
   },
   {
@@ -70,9 +72,10 @@ export const STARTUP_PRESETS: StartupPreset[] = [
       { modelId: 'compute_h100', count: 48 },
     ],
     employees: [
-      { role: StaffRole.RESEARCHER, level: 5, count: 4 },
-      { role: StaffRole.DATA_ENGINEER, level: 3, count: 1 },
-      { role: StaffRole.SYSTEM_ENGINEER, level: 3, count: 1 },
+      { role: StaffRole.RESEARCHER, level: 7, count: 1 },
+      { role: StaffRole.RESEARCHER, level: 5, count: 3 },
+      { role: StaffRole.DATA_ENGINEER, level: 5, count: 1 },
+      { role: StaffRole.SYSTEM_ENGINEER, level: 5, count: 1 },
     ],
   },
 ];

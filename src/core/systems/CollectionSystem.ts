@@ -16,7 +16,11 @@ import { COLLECTION_MAP, type CollectionRouteId } from '../config/dataAcquisitio
 import { ROLE_TO_STAFF_RESOURCE } from '../config/employees';
 import { StaffRole } from '../entities/Employee';
 import type { DataDomainId } from '../entities/Dataset';
-import { accumulateResearcherContribution } from '../utils/crossSystemUtils';
+import {
+  accumulateResearcherContribution,
+  getDataEngineerBonus,
+  getCompanyCollectionSpeed,
+} from '../utils/crossSystemUtils';
 
 export class CollectionSystem implements System {
   name = 'CollectionSystem';
@@ -35,8 +39,13 @@ export class CollectionSystem implements System {
         const route = COLLECTION_MAP[project.routeId as CollectionRouteId];
         if (!route) continue;
 
-        // 每日产量 × deltaDays
-        const tokensProduced = project.dailyRate * deltaDays;
+        // 改进 A：数据工程师效率加成（定向 + 被动 + 质量）
+        const engBonus = getDataEngineerBonus(draft, project.id, project.engineerIds);
+        // 改进 B：pipeline_optimization 技能额外加速采集
+        const companySpeed = 1 + getCompanyCollectionSpeed(draft);
+
+        // 每日产量 × deltaDays × 工程师效率倍率 × 公司技能倍率
+        const tokensProduced = project.dailyRate * deltaDays * engBonus.speedMultiplier * companySpeed;
         if (tokensProduced <= 0) continue;
 
         // ★ 数据工程师每日贡献累积
@@ -66,10 +75,10 @@ export class CollectionSystem implements System {
         }
         draft.resources['funds'] = funds - operatingCost;
 
-        // improve_data_quality 技术效果提升收集质量
+        // improve_data_quality 技术效果 + 数据工程师创造力加成 提升收集质量
         const dataQualityBonus = draft.activeTechEffects
           .filter((e) => e.type === 'improve_data_quality')
-          .reduce((s, e) => s + e.value, 0);
+          .reduce((s, e) => s + e.value, 0) + engBonus.qualityBonus;
         const effectiveQuality = Math.min(route.qualityCap, project.currentQuality + dataQualityBonus);
 
         // 添加到目标数据集

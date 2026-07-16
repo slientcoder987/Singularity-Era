@@ -184,7 +184,7 @@ export function StartupScreen({ onComplete }: StartupScreenProps) {
                     onClick={() =>
                       setCustomCards((prev) => ({
                         ...prev,
-                        [card.modelId]: Math.max(0, (prev[card.modelId] ?? 0) - 1),
+                        [card.modelId]: Math.max(0, (prev[card.modelId] ?? 0) - 8),
                       }))
                     }
                   >
@@ -199,7 +199,7 @@ export function StartupScreen({ onComplete }: StartupScreenProps) {
                     onClick={() =>
                       setCustomCards((prev) => ({
                         ...prev,
-                        [card.modelId]: Math.min(8, (prev[card.modelId] ?? 0) + 1),
+                        [card.modelId]: Math.min(64, (prev[card.modelId] ?? 0) + 8),
                       }))
                     }
                   >

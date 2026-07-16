@@ -146,6 +146,8 @@ export type TechEffect =
   | { type: 'improve_research_speed'; value: number }
   | { type: 'improve_experiment_confidence'; value: number }
   | { type: 'reduce_training_crash_risk'; value: number }
+  // 并行策略解锁
+  | { type: 'unlock_parallel_strategy'; strategy: 'pp' | 'tp' | 'ep' | 'cp' }
   | { type: 'enable_synthetic_data'; qualityBonus: number }
   | { type: 'enable_distillation'; efficiencyBonus: number }
   | { type: 'improve_data_quality'; value: number }

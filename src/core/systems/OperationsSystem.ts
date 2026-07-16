@@ -52,6 +52,8 @@ export class OperationsSystem implements System {
     // ---- IPO 股价波动 ----
     let stockUpdate = null;
     const ipo = current.fundingRounds.find((r) => r.type === 'ipo' && r.active);
+    // ★ 提前提取 ipo.id（快照 proxy 在 state.update() 后会撤销，不可在回调内访问）
+    const ipoId = ipo?.id;
     if (ipo && ipo.terms.stockPrice) {
       const volatility = 0.03;
       const drift = (actualRevenue > 0 ? 0.001 : -0.002);
@@ -128,9 +130,22 @@ export class OperationsSystem implements System {
 
       // 股价更新
       if (stockUpdate && ipo) {
-        const ipoIndex = draft.fundingRounds.findIndex((r) => r.id === ipo.id);
+        const ipoIndex = draft.fundingRounds.findIndex((r) => r.id === ipoId);
         if (ipoIndex >= 0 && draft.fundingRounds[ipoIndex].terms.stockPrice) {
           draft.fundingRounds[ipoIndex].terms.stockPrice = stockUpdate.new;
+          // 设计-19：退市检查——股价持续低于 $1 累计 30 天触发退市
+          const t = draft.fundingRounds[ipoIndex].terms;
+          if (stockUpdate.new < 1) {
+            t.lowPriceStreak = (t.lowPriceStreak ?? 0) + 1;
+            if (t.lowPriceStreak >= 30) {
+              draft.fundingRounds[ipoIndex].active = false;
+              deferredEvents.push(() => events.emit('STOCK_DELISTED', stockUpdate.new, t.lowPriceStreak));
+            } else if (t.lowPriceStreak === 15) {
+              deferredEvents.push(() => events.emit('STOCK_DELISTING_WARNING', stockUpdate.new, t.lowPriceStreak));
+            }
+          } else {
+            t.lowPriceStreak = 0;
+          }
         }
       }
 

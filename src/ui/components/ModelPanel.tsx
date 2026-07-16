@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { StartTrainingCommand, CancelTrainingCommand, ReallocateTrainingCardsCommand } from '../../core/commands/TrainingCommands';
-import { PublishModelCommand } from '../../core/commands/PublishModelCommand';
+import { PublishModelCommand, UnpublishModelCommand, SetModelResearchUsageCommand } from '../../core/commands/PublishModelCommand';
 import {
   AcquireDataCommand,
   SynthesizeDataCommand,
@@ -54,9 +54,15 @@ export function ModelPanel() {
         ))}
       </div>
 
-      {tab === 'training' && <TrainingTab />}
-      {tab === 'models' && <ModelsTab />}
-      {tab === 'data' && <DataTab />}
+      <div style={{ display: tab === 'training' ? 'block' : 'none' }}>
+        <TrainingTab />
+      </div>
+      <div style={{ display: tab === 'models' ? 'block' : 'none' }}>
+        <ModelsTab />
+      </div>
+      <div style={{ display: tab === 'data' ? 'block' : 'none' }}>
+        <DataTab />
+      </div>
     </section>
   );
 }
@@ -505,9 +511,17 @@ function ModelsTab() {
           <div className={styles.devRow} style={{ marginTop: '8px' }}>
             <span className={styles.devRowLabel}>市场发布</span>
             {selectedModel.published ? (
-              <span className={styles.devHint} style={{ color: '#5cb85c' }}>
-                ✓ 已发布（第 {selectedModel.daysSincePublished} 天）· 正在产生市场收入与 Token 收入
-              </span>
+              <>
+                <span className={styles.devHint} style={{ color: '#5cb85c' }}>
+                  ✓ 已发布（第 {selectedModel.daysSincePublished} 天）· 正在产生市场收入与 Token 收入
+                </span>
+                <button
+                  className={`${styles.btn} ${styles.btnWarn}`}
+                  onClick={() => game.executeCommand(new UnpublishModelCommand(selectedModel.id))}
+                >
+                  下架
+                </button>
+              </>
             ) : (
               <>
                 <span className={styles.devHint} style={{ color: '#ff9800' }}>
@@ -521,6 +535,24 @@ function ModelsTab() {
                 </button>
               </>
             )}
+          </div>
+          {/* ★ 设计-22：内部研发参与开关（控制 AI 对齐风险） */}
+          <div className={styles.devRow} style={{ marginTop: '4px' }}>
+            <span className={styles.devRowLabel}>内部研发</span>
+            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="checkbox"
+                checked={selectedModel.usedInResearch}
+                onChange={(e) =>
+                  game.executeCommand(new SetModelResearchUsageCommand(selectedModel.id, e.target.checked))
+                }
+              />
+              <span className={styles.devHint}>
+                {selectedModel.usedInResearch
+                  ? (selectedModel.audited ? '已审计 · 安全参与' : '⚠️ 未审计 · 触发AI对齐风险')
+                  : '已禁用 · 不参与研发'}
+              </span>
+            </label>
           </div>
         </>
       )}

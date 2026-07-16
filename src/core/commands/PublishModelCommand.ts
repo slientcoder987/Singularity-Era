@@ -92,3 +92,42 @@ export class UnpublishModelCommand implements Command {
     events.emit('MODEL_UNPUBLISHED', this.modelId, model.name);
   }
 }
+
+/**
+ * SetModelResearchUsageCommand
+ *
+ * 设计-22：控制模型是否参与内部研发（usedInResearch 标志）。
+ *
+ * 当模型 usedInResearch = true 且未审计时，会触发 AI 对齐风险
+ * （ai_misalignment / ai_deception）。玩家可通过此命令主动关闭
+ * 高能力模型的研发参与以规避风险。
+ *
+ * 限制：模型必须存在。
+ */
+export class SetModelResearchUsageCommand implements Command {
+  constructor(
+    private modelId: string,
+    private enabled: boolean,
+  ) {}
+
+  execute(state: GameState, events: EventBus): void {
+    const current = state.read();
+    const model = current.models.find((m) => m.id === this.modelId);
+    if (!model) {
+      events.emit('MODEL_RESEARCH_USAGE_FAILED', this.modelId, '模型不存在');
+      return;
+    }
+
+    state.update((draft) => {
+      const m = draft.models.find((x) => x.id === this.modelId);
+      if (!m) return;
+      m.usedInResearch = this.enabled;
+    });
+
+    events.emit(
+      this.enabled ? 'MODEL_RESEARCH_ENABLED' : 'MODEL_RESEARCH_DISABLED',
+      this.modelId,
+      model.name,
+    );
+  }
+}

@@ -52,6 +52,8 @@ export interface FundingTerms {
   shortSellRisk?: number;
   /** 流通股数（设计-15：用于增发/回购计算） */
   sharesOutstanding?: number;
+  /** 设计-19：股价持续低于 $1 的累计天数，达到 30 天触发退市 */
+  lowPriceStreak?: number;
 
   // ---- 通用 ----
   /** 董事会新增席位 */

@@ -53,8 +53,12 @@ export function SettingsPanel() {
       </div>
 
       <div className={styles.tabBody}>
-        {tab === 'debug' && <DebugTab />}
-        {tab === 'systemInfo' && <SystemInfoTab />}
+        <div style={{ display: tab === 'debug' ? 'block' : 'none' }}>
+          <DebugTab />
+        </div>
+        <div style={{ display: tab === 'systemInfo' ? 'block' : 'none' }}>
+          <SystemInfoTab />
+        </div>
       </div>
     </section>
   );

@@ -17,7 +17,12 @@ import {
   deriveBaseScoreParams,
   calculateCapabilities,
 } from '../utils/capabilityCalc';
-import { getStaffTrainingSpeedMultiplier, getStaffTrainingStabilityBonus, accumulateResearcherContribution } from '../utils/crossSystemUtils';
+import {
+  getStaffTrainingSpeedMultiplier,
+  getStaffTrainingStabilityBonus,
+  accumulateResearcherContribution,
+  getCompanyTrainingComputeReduction,
+} from '../utils/crossSystemUtils';
 import { getActiveCloudTFLOPS } from '../utils/cloudComputeUtils';
 import { StaffRole } from '../entities/Employee';
 
@@ -77,6 +82,34 @@ export class TrainingSystem implements System {
     const pausedProjects: Array<{ id: string; reason: string }> = [];
     const releasedModels: Array<{ name: string; score: number }> = [];
 
+    // 设计-18：自动恢复因风险事件暂停的训练（到达 autoResumeDay 时自动恢复）
+    const autoResumedProjects: Array<{ id: string; modelName: string }> = [];
+
+    state.update((draft) => {
+      for (const project of draft.trainingProjects) {
+        if (project.status === 'paused' && project.autoResumeDay !== undefined && draft.date >= project.autoResumeDay) {
+          // 检查是否有可用卡再恢复
+          const specs = this.collectCardSpecs(draft, project);
+          if (specs.length > 0) {
+            project.status = 'training';
+            project.pauseReason = null;
+            project.autoResumeDay = undefined;
+            project.trainingLog.push({
+              day: draft.date,
+              event: '风险暂停期满，自动恢复训练',
+              severity: 'info',
+            });
+            autoResumedProjects.push({ id: project.id, modelName: project.modelName });
+          }
+          // 无可用卡则推迟恢复，保持 paused 但不清除 autoResumeDay
+        }
+      }
+    });
+
+    for (const p of autoResumedProjects) {
+      events.emit('TRAINING_RESUMED', p.id);
+    }
+
     state.update((draft) => {
       for (const project of draft.trainingProjects) {
         if (project.status !== 'training') continue;
@@ -109,6 +142,7 @@ export class TrainingSystem implements System {
         const modelParams: ModelParams = {
           paramCount: project.paramCount,
           architecture: project.architecture,
+          parallelConfig: project.parallelConfig,
         };
 
         const result = calculateEffectiveCompute(
@@ -151,12 +185,16 @@ export class TrainingSystem implements System {
         }
 
         // 每日推进 = 有效算力 × 阶段修正 × deltaDays
-        const staffSpeedMult = getStaffTrainingSpeedMultiplier(draft);
+        // 改进 C：传入 projectId 让定向分配的研究员获得 1.5% 加成，被动仅 0.3%
+        const staffSpeedMult = getStaffTrainingSpeedMultiplier(draft, project.id);
+        // 改进 B：reduce_training_compute 技能降低训练算力需求 → 同等算力推进更快
+        const computeReduction = getCompanyTrainingComputeReduction(draft);
+        const speedMultiplier = staffSpeedMult * (1 + computeReduction);
         // BUG-2 修复：累加活跃云算力（云算力无集群/电力加成，仅受利用率影响）
         const cloudTFLOPS = getActiveCloudTFLOPS(draft);
         const cloudUtilization = 0.9;
-        const cloudProgress = cloudTFLOPS * cloudUtilization * phaseModifier * deltaDays * staffSpeedMult;
-        const dailyProgress = result.effectiveTflops * phaseModifier * deltaDays * staffSpeedMult + cloudProgress;
+        const cloudProgress = cloudTFLOPS * cloudUtilization * phaseModifier * deltaDays * speedMultiplier;
+        const dailyProgress = result.effectiveTflops * phaseModifier * deltaDays * speedMultiplier + cloudProgress;
         project.computeRemaining = Math.max(0, project.computeRemaining - dailyProgress);
 
         // 计算训练进度
