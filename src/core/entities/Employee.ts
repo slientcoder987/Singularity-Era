@@ -9,6 +9,7 @@ export enum StaffRole {
   SYSTEM_ENGINEER = 'system_engineer', // 系统工程师
   PRODUCT_MANAGER = 'product_manager', // 产品经理
   LEGAL_PR = 'legal_pr',               // 法务/公关
+  MANAGER = 'manager',                 // 管理人员（高管层，影响全公司管理效率）
 }
 
 /** 员工基础属性（五维） */

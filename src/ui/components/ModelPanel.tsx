@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { StartTrainingCommand, CancelTrainingCommand, ReallocateTrainingCardsCommand } from '../../core/commands/TrainingCommands';
@@ -74,7 +74,9 @@ function TrainingTab() {
   const clusters = useGameState((s) => s.clusters);
   const datasets = useGameState((s) => s.datasets);
   const trainingProjects = useGameState((s) => s.trainingProjects);
-  const unlockedTechs = useGameState((s) => s.unlockedTechs);
+  const techMaturity = useGameState((s) => s.techMaturity);
+  const serverNodes = useGameState((s) => s.serverNodes);
+  const resourceMeta = useGameState((s) => s.resourceMeta);
 
   const [modelName, setModelName] = useState('GPT-7B');
   const [paramCount, setParamCount] = useState(7);
@@ -92,7 +94,7 @@ function TrainingTab() {
 
   // 选择已解锁的架构技术
   const archTechs = ALL_TECH.filter(
-    (t) => t.isArchitecture && unlockedTechs.includes(t.id),
+    (t) => t.isArchitecture && (techMaturity[t.id] ?? 0) >= 1,
   );
   const [selectedArchs, setSelectedArchs] = useState<Set<string>>(new Set());
 
@@ -108,15 +110,17 @@ function TrainingTab() {
   const activeProjects = trainingProjects.filter((p) => p.status === 'training');
   const pausedProjects = trainingProjects.filter((p) => p.status === 'paused');
 
-  // 实时诊断：当参数变化时自动分析可行性
-  // 每次渲染重算以确保卡状态变化后诊断同步更新
-  const diagnosis = selectedClusterId
-    ? diagnoseTraining(
-        paramCount, contextLength,
-        selectedArchs.has('moe') ? 'moe' : 'transformer',
-        selectedClusterId, game.state,
-      )
-    : [];
+  // 实时诊断：参数或基础设施状态变化时重算
+  const arch = selectedArchs.has('moe') ? 'moe' : 'transformer';
+  const diagnosis = useMemo(
+    () => selectedClusterId
+      ? diagnoseTraining(paramCount, contextLength, arch, selectedClusterId, game.state)
+      : [],
+    // clusters/serverNodes/resourceMeta 经 diagnoseTraining → state.read() 间接读取，
+    // game.state 实例引用稳定，必须依赖这三者以在状态变化时触发重算（修复 stale 诊断 bug）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedClusterId, paramCount, contextLength, arch, clusters, serverNodes, resourceMeta, game.state],
+  );
 
   const blockers = diagnosis.filter((d) => d.severity === 'blocker');
   const warnings = diagnosis.filter((d) => d.severity === 'warning');
@@ -628,7 +632,7 @@ function ModelDetail({ model }: { model: Model }) {
 function DataTab() {
   const game = useGame();
   const datasets = useGameState((s) => s.datasets);
-  const unlockedTechs = useGameState((s) => s.unlockedTechs);
+  const techMaturity = useGameState((s) => s.techMaturity);
   const funds = useGameState((s) => s.resources['funds'] ?? 0);
   const cooldowns = useGameState((s) => s.dataAcquisitionCooldowns);
   const date = useGameState((s) => s.date);
@@ -795,7 +799,7 @@ function DataTab() {
           {COLLECTION_ROUTES.map((r) => (
             <option key={r.id} value={r.id}>
               {r.name} ({r.baseRate}B/人/天 · 质量{(r.baseQuality * 100).toFixed(0)}-{(r.qualityCap * 100).toFixed(0)}%)
-              {r.requiredTech && !unlockedTechs.includes(r.requiredTech) ? ' [需技术]' : ''}
+              {r.requiredTech && (techMaturity[r.requiredTech] ?? 0) < 1 ? ' [需技术]' : ''}
             </option>
           ))}
         </select>
@@ -871,7 +875,7 @@ function DataTab() {
         const lastUsed = cooldowns[route.id] ?? -999;
         const remaining = route.cooldownDays - (date - lastUsed);
         const onCooldown = remaining > 0;
-        const techLocked = !!(route.requiredTech && !unlockedTechs.includes(route.requiredTech));
+        const techLocked = !!(route.requiredTech && (techMaturity[route.requiredTech] ?? 0) < 1);
         const tooExpensive = funds < route.cost;
 
         return (
@@ -897,7 +901,7 @@ function DataTab() {
       })}
 
       {/* 合成数据 */}
-      {unlockedTechs.includes('distillation') && (
+      {(techMaturity['distillation'] ?? 0) >= 1 && (
         <>
           <div className={styles.devRow}>
             <span className={styles.devRowLabel} style={{ marginTop: '8px' }}>合成数据</span>

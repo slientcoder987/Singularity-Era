@@ -22,17 +22,24 @@ export function calcExperimentCost(mainModelParams: number, scale: 'small' | 'me
  * 运行实验，推断架构-能力映射
  *
  * 返回带噪声的估计值。多次实验可收敛到真实值。
+ *
+ * @param techMaturity 该架构技术的当前成熟度（0~100）
+ *   - 已解锁技术复测：噪声降低（最高 -50%），代表对已验证架构的实验更精确
+ *   - maturity ≥ 50：置信度 +0.1；maturity ≥ 100：置信度 +0.2
  */
 export function runExperiment(
   archTechId: string,
   archMatrix: ArchMatrix,
   scale: 'small' | 'medium',
   confidenceBonus: number = 0,
+  techMaturity: number = 0,
 ): ExperimentResult {
   const trueBonuses = archMatrix[archTechId] ?? {};
-  const noiseSigma = scale === 'small'
+  const baseNoiseSigma = scale === 'small'
     ? EXPERIMENT_VALIDATION.smallNoiseSigma
     : EXPERIMENT_VALIDATION.mediumNoiseSigma;
+  // 已解锁技术做实验：噪声降低（最高 -50%），代表"对已验证架构的复测更精确"
+  const noiseSigma = baseNoiseSigma * (1 - Math.min(0.5, techMaturity / 200));
   const modelScale = scale === 'small'
     ? EXPERIMENT_VALIDATION.smallModelScale
     : EXPERIMENT_VALIDATION.mediumModelScale;
@@ -47,10 +54,15 @@ export function runExperiment(
     estimatedBonuses[capId] = trueValue + z * noiseSigma;
   }
 
+  // maturity 加成置信度：已成熟技术做实验结论更可靠
+  let matConfBonus = 0;
+  if (techMaturity >= 100) matConfBonus = 0.2;
+  else if (techMaturity >= 50) matConfBonus = 0.1;
+
   return {
     archTechId,
     estimatedBonuses,
-    confidence: Math.max(0.1, Math.min(1, (1 - noiseSigma) + confidenceBonus)),
+    confidence: Math.max(0.1, Math.min(1, (1 - noiseSigma) + confidenceBonus + matConfBonus)),
     modelScale,
     date: 0,
   };

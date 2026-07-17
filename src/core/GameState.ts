@@ -14,6 +14,11 @@ import type { FundingRound, BoardMission } from './entities/Operations';
 import type { CompetitorState, ExternalCorp } from './entities/Competitor';
 import type { Department } from './entities/Department';
 import type { StaffTrainingProject } from './entities/StaffTrainingProject';
+import type { ManagementMode, ExecutiveAssignment } from './config/management';
+import type { TechIdea } from './entities/TechIdea';
+import type { SmallCompany } from './entities/SmallCompany';
+import type { OpenSourceOffer } from './entities/OpenSourceOffer';
+import type { IdeaTechNode } from './config/techTree';
 
 /**
  * 硬件采购订单
@@ -86,7 +91,13 @@ export interface GameData {
   trainingProjects: TrainingProject[];
 
   // ===== 科技效果（预留，后续科研系统填充） =====
-  /** 当前激活的科技效果列表 */
+  /**
+   * 当前激活的科技效果列表（已废弃，保留兼容旧存档）
+   *
+   * 新代码应调用 `getActiveTechEffects(data)` 派生获取，
+   * 该函数遍历 techMaturity 并按成熟度缩放 effect。
+   * 此字段不再写入，仅用于 migrateOldData 期间读取旧值。
+   */
   activeTechEffects: TechEffect[];
 
   // ===== 基础设施事件日志 =====
@@ -96,10 +107,27 @@ export interface GameData {
   // ===== P0 大模型训练机制 =====
   /** 数据集列表 */
   datasets: Dataset[];
-  /** 已解锁技术 id 列表 */
-  unlockedTechs: string[];
-  /** 正在研发的技术 */
-  researchingTech: { techId: string; progressDays: number; totalDays: number } | null;
+  /**
+   * 技术成熟度表：techId → 0~100
+   *
+   * - maturity ≥ 1 视为已解锁
+   * - effect 按 maturity/100 线性缩放（见 scaleTechEffect）
+   * - 替代旧 `unlockedTechs: string[]`，存档迁移时旧值置 50
+   */
+  techMaturity: Record<string, number>;
+  /**
+   * 正在研发的技术
+   *
+   * researcherIds: 参与研发的研究员 id 列表（PR2 起使用）
+   * dailyCost: 每日研发维持成本（资金不足时暂停研发）
+   */
+  researchingTech: {
+    techId: string;
+    progressDays: number;
+    totalDays: number;
+    researcherIds: string[];
+    dailyCost: number;
+  } | null;
   /** 本局架构-能力映射矩阵种子 */
   archMatrixSeed: number;
 
@@ -169,6 +197,33 @@ export interface GameData {
   lastTeamBuildingDay: number;
   /** 上次绩效评估日 */
   lastPerformanceEvalDay: number;
+
+  // ===== 公司管理系统（新增） =====
+  /** 当前管理模式 */
+  managementMode: ManagementMode;
+  /** 上次切换模式的日期（用于冷却判定，初始 -999 表示无冷却） */
+  managementModeChangedDay: number;
+  /** 高管任命（CEO/COO/CFO/CTO 的员工 id，null 表示空缺） */
+  executives: ExecutiveAssignment;
+
+  // ===== 研发系统扩展（技术路线 / 成熟度 / idea / 小公司 / 开源） =====
+  /** 待处理的员工 idea 列表（IdeaGenerationSystem 产出，玩家通过 AcceptIdeaCommand 处理） */
+  pendingIdeas: TechIdea[];
+  /** 市场中的小公司列表（SmallCompanyMarketSystem 每 14 天刷新） */
+  smallCompanies: SmallCompany[];
+  /** 开源技术采纳要约列表（open_source 竞争对手触发） */
+  openSourceOffers: OpenSourceOffer[];
+  /**
+   * 已接受的独有技术定义（持久化）
+   *
+   * 加载存档时通过此字段重建 IDEA_TECH_MAP 运行时表。
+   * 包含来源：idea(unique) / open_source / small_company
+   */
+  acceptedIdeaTechs: IdeaTechNode[];
+  /** 上次小公司市场刷新日期（初始 -999，每 14 天刷新一次） */
+  lastSmallCompanyRefreshDay: number;
+  /** 各竞争对手上次开源日期（compId → 游戏天数，每 30~60 天开源一次） */
+  lastOpenSourceDay: Record<string, number>;
 
   // ===== 设计-2 修复：电力成本统一记账 =====
   /** 上一个游戏日实际扣除的电力成本（由 PowerSystem + InfraMaintenanceSystem 累加），

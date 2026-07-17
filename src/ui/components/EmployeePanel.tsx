@@ -35,15 +35,31 @@ import { PromoteEmployeeCommand } from '../../core/commands/PromoteEmployeeComma
 import { StartStaffTrainingCommand, CancelStaffTrainingCommand } from '../../core/commands/StaffTrainingCommands';
 import { AppointDepartmentHeadCommand, TransferDepartmentCommand, AllocateNormalStaffCommand } from '../../core/commands/DepartmentCommands';
 import { formatCurrency } from '../../core/utils';
+import { SwitchManagementModeCommand, AppointExecutiveCommand, DismissExecutiveCommand } from '../../core/commands/ManagementCommands';
+import {
+  MANAGEMENT_MODES,
+  EXECUTIVE_CONFIGS,
+  EXECUTIVE_ROLES,
+  getCompanyScale,
+  getRecommendedMode,
+  getModeMatchFactor,
+  calcModeSwitchCost,
+  MODE_SWITCH_COOLDOWN_DAYS,
+  getExecutiveBonus,
+  type ManagementMode,
+  type CompanyScale,
+} from '../../core/config/management';
+import { getManagementEfficiency, getTotalNormalHeadcount } from '../../core/utils/crossSystemUtils';
 import styles from '../styles/App.module.css';
 
-type StaffTab = 'employees' | 'recruitment' | 'training' | 'departments';
+type StaffTab = 'employees' | 'recruitment' | 'training' | 'departments' | 'management';
 
 const STAFF_TABS: { key: StaffTab; label: string }[] = [
   { key: 'employees', label: '员工列表' },
   { key: 'recruitment', label: '招聘' },
   { key: 'training', label: '培训' },
   { key: 'departments', label: '部门' },
+  { key: 'management', label: '管理' },
 ];
 
 /**
@@ -64,6 +80,9 @@ export function EmployeePanel() {
   const pendingCandidates = useGameState((s) => s.pendingCandidates);
   const lastTeamBuildingDay = useGameState((s) => s.lastTeamBuildingDay);
   const date = useGameState((s) => s.date);
+  const managementMode = useGameState((s) => s.managementMode);
+  const managementModeChangedDay = useGameState((s) => s.managementModeChangedDay);
+  const executives = useGameState((s) => s.executives);
 
   return (
     <section className={styles.devPanel}>
@@ -116,6 +135,17 @@ export function EmployeePanel() {
             game={game}
             employees={employees}
             departments={departments}
+          />
+        </div>
+        <div style={{ display: tab === 'management' ? 'block' : 'none' }}>
+          <ManagementTab
+            game={game}
+            employees={employees}
+            funds={funds}
+            date={date}
+            managementMode={managementMode}
+            managementModeChangedDay={managementModeChangedDay}
+            executives={executives}
           />
         </div>
       </div>
@@ -472,6 +502,8 @@ function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }
         <span className={styles.devRowLabel}>招聘渠道</span>
         {(Object.values(RECRUITMENT_CHANNELS)).map((ch) => {
           if (ch.id === 'internal_promote') return null;
+          // executive_search 渠道仅对 MANAGER 角色开放
+          if (ch.id === 'executive_search' && role !== StaffRole.MANAGER) return null;
           const isFull = employees.filter((e) => e.role === role).length >= CORE_EMPLOYEE_CAP_PER_ROLE;
           return (
             <button
@@ -978,4 +1010,263 @@ function DepartmentCard({
       )}
     </div>
   );
+}
+
+/* ============================================================
+   标签五：管理
+   ============================================================ */
+
+interface ManagementTabProps {
+  game: ReturnType<typeof useGame>;
+  employees: Employee[];
+  funds: number;
+  date: number;
+  managementMode: ManagementMode;
+  managementModeChangedDay: number;
+  executives: { ceoId: string | null; cooId: string | null; cfoId: string | null; ctoId: string | null };
+}
+
+function ManagementTab({
+  game, employees, funds, date, managementMode, managementModeChangedDay, executives,
+}: ManagementTabProps) {
+  // 整个 GameData 快照（用于管理效率/高管加成等派生计算）
+  const data = useGameState((s) => s);
+
+  // 派生指标
+  const totalNormal = getTotalNormalHeadcount(data);
+  const scale = getCompanyScale(totalNormal);
+  const mgmtEff = getManagementEfficiency(data);
+  const execBonus = getExecutiveBonus(data);
+  const coreManagers = employees.filter(
+    (e) => e.role === StaffRole.MANAGER && e.status !== 'training',
+  ).length;
+  const staffingRatio = Math.min(
+    coreManagers / MANAGEMENT_MODES[managementMode].requiredManagers,
+    1.0,
+  );
+
+  const daysSinceLast = date - managementModeChangedDay;
+  const inCooldown = daysSinceLast < MODE_SWITCH_COOLDOWN_DAYS;
+
+  return (
+    <div>
+      {/* ============ 区块 1：规模与效率仪表盘 ============ */}
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>公司规模</span>
+        <span className={styles.devHint}>
+          {scaleDisplayName(scale)} · 普通员工 {totalNormal} 人 · 在职 Manager {coreManagers} 人
+        </span>
+      </div>
+
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>当前模式</span>
+        <span className={styles.devHint}>
+          {MANAGEMENT_MODES[managementMode].displayName} ·
+          {' '}基础效率 ×{MANAGEMENT_MODES[managementMode].baseEfficiency.toFixed(2)} ·
+          {' '}匹配度 ×{getModeMatchFactor(managementMode, scale).toFixed(2)} ·
+          {' '}编制比 ×{staffingRatio.toFixed(2)}（{coreManagers}/{MANAGEMENT_MODES[managementMode].requiredManagers}）
+        </span>
+      </div>
+
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>管理效率</span>
+        <span style={{ color: mgmtEff >= 1.0 ? '#7af0c0' : '#ffb454', fontWeight: 700 }}>
+          ×{mgmtEff.toFixed(3)}
+        </span>
+        <span className={styles.devHint}>
+          （影响 7 个 staff 加成系统：训练速度 / 训练稳定 / 研发速度 / 故障抑制 / 收入 / 法务 / 数据采集）
+        </span>
+      </div>
+
+      {/* ============ 区块 2：模式切换 ============ */}
+      <h4 className={styles.devRowLabel} style={{ marginTop: 16 }}>管理模式切换</h4>
+
+      <div className={styles.devRow}>
+        <span className={styles.devHint}>
+          冷却期 {MODE_SWITCH_COOLDOWN_DAYS} 天 ·
+          {' '}距上次切换 {daysSinceLast} 天
+          {inCooldown
+            ? `（剩余 ${MODE_SWITCH_COOLDOWN_DAYS - daysSinceLast} 天）`
+            : '（可切换）'}
+        </span>
+      </div>
+
+      <div className={styles.empList}>
+        {(Object.values(MANAGEMENT_MODES)).map((modeCfg) => {
+          const isCurrent = modeCfg.id === managementMode;
+          const cost = calcModeSwitchCost(modeCfg.id, coreManagers);
+          const insufficientFunds = funds < cost;
+          const disabled = isCurrent || inCooldown || insufficientFunds;
+
+          return (
+            <div key={modeCfg.id} className={styles.empCard}>
+              <div className={styles.empHeader}>
+                <span className={styles.empName}>{modeCfg.displayName}</span>
+                {isCurrent && <span className={styles.empRole}>当前</span>}
+                <span className={styles.empLevel}>
+                  基础效率 ×{modeCfg.baseEfficiency.toFixed(2)}
+                </span>
+              </div>
+              <div className={styles.empInfo}>
+                <span>{modeCfg.description}</span>
+              </div>
+              <div className={styles.empInfo}>
+                <span>所需 Manager: {modeCfg.requiredManagers} 人</span>
+                <span>切换成本: {formatCurrency(cost)}</span>
+              </div>
+              <div className={styles.empActions}>
+                <button
+                  className={`${styles.btn} ${styles.btnSm}`}
+                  disabled={disabled}
+                  onClick={() => game.executeCommand(new SwitchManagementModeCommand(modeCfg.id))}
+                  title={
+                    isCurrent ? '已是当前模式'
+                    : inCooldown ? `冷却中（剩余 ${MODE_SWITCH_COOLDOWN_DAYS - daysSinceLast} 天）`
+                    : insufficientFunds ? '资金不足'
+                    : `切换到 ${modeCfg.displayName}，花费 ${formatCurrency(cost)}`
+                  }
+                >
+                  {isCurrent ? '当前' : '切换'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className={styles.devRow}>
+        <span className={styles.devHint}>
+          推荐模式：{MANAGEMENT_MODES[getRecommendedMode(scale)].displayName}（基于当前规模）
+        </span>
+      </div>
+
+      {/* ============ 区块 3：高管任命 ============ */}
+      <h4 className={styles.devRowLabel} style={{ marginTop: 16 }}>高管任命</h4>
+
+      <div className={styles.devRow}>
+        <span className={styles.devHint}>
+          高管加成汇总：效率 +{(execBonus.efficiencyBonus * 100).toFixed(1)}% ·
+          {' '}士气下限 {execBonus.moraleFloor} ·
+          {' '}故障抑制 ×{(1 - execBonus.infraFailureReduction).toFixed(2)} ·
+          {' '}薪资折扣 ×{(1 - execBonus.salaryDiscount).toFixed(2)} ·
+          {' '}研发加成 ×{(1 + execBonus.researchSpeedBonus).toFixed(2)}
+        </span>
+      </div>
+
+      <div className={styles.empList}>
+        {EXECUTIVE_ROLES.map((role) => {
+          const cfg = EXECUTIVE_CONFIGS[role];
+          const slotKey = `${role}Id` as 'ceoId' | 'cooId' | 'cfoId' | 'ctoId';
+          const appointedId = executives[slotKey];
+          const appointed = appointedId
+            ? employees.find((e) => e.id === appointedId) ?? null
+            : null;
+
+          // 候选人：MANAGER 角色 + 等级达标 + leadership 达标 + charisma 达标 + 未任其他高管槽
+          const candidates = employees.filter((e) => {
+            if (e.role !== StaffRole.MANAGER) return false;
+            if (e.level < cfg.minLevel) return false;
+            if (e.attributes.leadership < cfg.minLeadership) return false;
+            if (cfg.minCharisma > 0 && e.attributes.charisma < cfg.minCharisma) return false;
+            // 已任其他高管槽
+            if (executives.ceoId === e.id && role !== 'ceo') return false;
+            if (executives.cooId === e.id && role !== 'coo') return false;
+            if (executives.cfoId === e.id && role !== 'cfo') return false;
+            if (executives.ctoId === e.id && role !== 'cto') return false;
+            return true;
+          });
+
+          return (
+            <div key={role} className={styles.empCard}>
+              <div className={styles.empHeader}>
+                <span className={styles.empName}>{cfg.displayName}</span>
+                <span className={styles.empLevel}>效率 +{(cfg.efficiencyBonus * 100).toFixed(1)}%</span>
+                {appointed ? (
+                  <span style={{ color: '#7af0c0', fontSize: 12 }}>
+                    {appointed.name} Lv.{appointed.level} 领{appointed.attributes.leadership}
+                  </span>
+                ) : (
+                  <span style={{ color: '#ff6b6b', fontSize: 12 }}>空缺</span>
+                )}
+              </div>
+              <div className={styles.empInfo}>
+                <span>
+                  要求: Lv{cfg.minLevel}+ / 领导力{cfg.minLeadership}+
+                  {cfg.minCharisma > 0 ? ` / 魅力${cfg.minCharisma}+` : ''}
+                </span>
+              </div>
+              <div className={styles.empInfo}>
+                <span>
+                  {cfg.moraleFloor ? `士气下限 ${cfg.moraleFloor}`
+                    : cfg.infraFailureReduction ? `故障抑制 ×${(1 - cfg.infraFailureReduction).toFixed(2)}`
+                    : cfg.salaryDiscount ? `薪资折扣 ×${(1 - cfg.salaryDiscount).toFixed(2)}`
+                    : cfg.researchSpeedBonus ? `研发加成 ×${(1 + cfg.researchSpeedBonus).toFixed(2)}`
+                    : '—'}
+                </span>
+              </div>
+              <div className={styles.empActions}>
+                <select
+                  className={styles.select}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      game.executeCommand(new AppointExecutiveCommand(role, e.target.value));
+                    }
+                  }}
+                  disabled={candidates.length === 0}
+                >
+                  <option value="">
+                    {candidates.length === 0 ? '无合格候选人' : '-- 任命 --'}
+                  </option>
+                  {candidates.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name} Lv.{e.level} 领{e.attributes.leadership}
+                      {cfg.minCharisma > 0 ? ` 魅${e.attributes.charisma}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {appointed && (
+                  <button
+                    className={`${styles.btn} ${styles.btnSm} ${styles.btnWarn}`}
+                    onClick={() => game.executeCommand(new DismissExecutiveCommand(role))}
+                  >
+                    解任
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ============ 区块 4：管理效率公式说明（折叠） ============ */}
+      <details style={{ marginTop: 16 }}>
+        <summary className={styles.devRowLabel} style={{ cursor: 'pointer' }}>
+          管理效率公式说明
+        </summary>
+        <div className={styles.devHint} style={{ padding: '8px 12px' }}>
+          <div>finalEff = clamp(</div>
+          <div style={{ paddingLeft: 16 }}>
+            baseModeEff × staffingRatio × modeMatchFactor
+          </div>
+          <div style={{ paddingLeft: 16 }}>
+            × (1 + execBonus) × (1 + skillBonus), 0.5, 1.3
+          </div>
+          <div>)</div>
+          <div style={{ marginTop: 8 }}>
+            · 微小公司豁免：普通员工 &lt; 5 人时直接 = 1.0
+          </div>
+          <div>· staffingRatio = min(在职Manager / 模式所需Manager, 1.0)</div>
+          <div>· modeMatchFactor：模式与规模档位差距（0档=1.00 / 1档=0.85 / 2档=0.70 / 3档=0.55）</div>
+          <div>· execBonus：4 位高管效率加成累加（CEO +3% / COO +2% / CFO +1.5% / CTO +2.5%）</div>
+          <div>· skillBonus：executive_vision 技能累加（每个 +2%）</div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/** 公司规模显示名 */
+function scaleDisplayName(scale: CompanyScale): string {
+  return { small: '小型', medium: '中型', large: '大型', huge: '巨型' }[scale];
 }

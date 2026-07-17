@@ -50,7 +50,7 @@ export const STARTUP_PRESETS: StartupPreset[] = [
   {
     id: 'balanced',
     name: '均衡起步',
-    description: '32 卡 H100 集群 + 完整团队。启动资金有限，需种子轮/VC 融资支撑扩张。',
+    description: '32 卡 H100 集群 + 完整团队（含 1 名管理骨干）。启动资金有限，需种子轮/VC 融资支撑扩张。',
     bonusFunds: 3_000_000,
     cards: [
       { modelId: 'compute_h100', count: 32 },
@@ -61,6 +61,7 @@ export const STARTUP_PRESETS: StartupPreset[] = [
       { role: StaffRole.DATA_ENGINEER, level: 5, count: 2 },
       { role: StaffRole.SYSTEM_ENGINEER, level: 5, count: 1 },
       { role: StaffRole.PRODUCT_MANAGER, level: 5, count: 1 },
+      { role: StaffRole.MANAGER, level: 5, count: 1 },
     ],
   },
   {

@@ -56,6 +56,29 @@ export interface TechNode {
   isArchitecture: boolean;
 }
 
+/**
+ * 独有技术节点（来源于员工 idea / 开源 / 小公司）
+ *
+ * 与预设 TechNode 的区别：
+ * - source 标识技术来源，用于 UI 展示与统计
+ * - 不在 ALL_TECH 中，运行时通过 IDEA_TECH_MAP 查询
+ * - 持久化通过 GameData.acceptedIdeaTechs 字段，加载存档时重建 IDEA_TECH_MAP
+ */
+export type IdeaTechSource = 'idea' | 'open_source' | 'small_company';
+
+export interface IdeaTechNode extends TechNode {
+  source: IdeaTechSource;
+}
+
+/**
+ * 已生成的独有技术表（运行时填充）
+ *
+ * - 由 AcceptIdeaCommand / AdoptOpenSourceCommand / AcquireSmallCompanyCommand 注册
+ * - 加载存档时通过 GameData.acceptedIdeaTechs 重建
+ * - getTechNode() 查询时优先 TECH_MAP，其次 IDEA_TECH_MAP
+ */
+export const IDEA_TECH_MAP: Record<string, IdeaTechNode> = {};
+
 /** P0 技术节点 */
 export const TECH_TREE: TechNode[] = [
   {

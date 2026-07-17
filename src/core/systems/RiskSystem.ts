@@ -8,7 +8,7 @@ import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { checkDailyRisks, calcTrainingCrashProbability } from '../utils/riskUtils';
 import type { CapabilityId } from '../config/capabilities';
-import { getStaffLegalRiskReductionPerDay } from '../utils/crossSystemUtils';
+import { getStaffLegalRiskReductionPerDay, getActiveTechEffects } from '../utils/crossSystemUtils';
 
 export class RiskSystem implements System {
   name = 'RiskSystem';
@@ -33,8 +33,8 @@ export class RiskSystem implements System {
       }
     }
 
-    // 对齐技术降低 AI 失控风险概率
-    const alignmentBonus = current.activeTechEffects
+    // 对齐技术降低 AI 失控风险概率（按 maturity 缩放后的派生效果）
+    const alignmentBonus = getActiveTechEffects(current)
       .filter((e) => e.type === 'improve_alignment')
       .reduce((s, e) => s + e.value, 0);
 
@@ -105,7 +105,7 @@ export class RiskSystem implements System {
 
     // 3. 训练崩溃检查（针对每个训练中项目）
     // 统一通过 reduce_training_crash_risk 技术效果减免，不在 calcTrainingCrashProbability 内重复应用
-    const crashRiskReduction = current.activeTechEffects
+    const crashRiskReduction = getActiveTechEffects(current)
       .filter((e) => e.type === 'reduce_training_crash_risk')
       .reduce((s, e) => s + e.value, 0);
 

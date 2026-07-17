@@ -194,7 +194,8 @@ export class OperationsSystem implements System {
               + (draft.resources['staff_data_engineer'] ?? 0)
               + (draft.resources['staff_system_engineer'] ?? 0)
               + (draft.resources['staff_product_manager'] ?? 0)
-              + (draft.resources['staff_legal_pr'] ?? 0);
+              + (draft.resources['staff_legal_pr'] ?? 0)
+              + (draft.resources['staff_manager'] ?? 0);
             if (totalStaff >= (mission.targetHeadcount ?? Infinity)) completed = true;
             break;
           }
@@ -267,7 +268,11 @@ export class OperationsSystem implements System {
     const dailyRev = draft.operations?.dailyRevenue ?? 0;
     const totalStaff = draft.employees.length
       + (draft.resources['staff_researcher'] ?? 0)
-      + (draft.resources['staff_data_engineer'] ?? 0);
+      + (draft.resources['staff_data_engineer'] ?? 0)
+      + (draft.resources['staff_system_engineer'] ?? 0)
+      + (draft.resources['staff_product_manager'] ?? 0)
+      + (draft.resources['staff_legal_pr'] ?? 0)
+      + (draft.resources['staff_manager'] ?? 0);
 
     const missionTypes: Array<'achieve_revenue' | 'hire_staff' | 'enter_market' | 'launch_domain_model'> = [];
     if (dailyRev < 5000) missionTypes.push('achieve_revenue');

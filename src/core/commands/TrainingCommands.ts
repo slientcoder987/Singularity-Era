@@ -1,5 +1,5 @@
 import type { Command } from '../interfaces/Command';
-import type { GameState, CardInstance } from '../GameState';
+import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { TrainingProject, ParallelConfig } from '../entities/TrainingProject';
 import { createDefaultParallelConfig } from '../entities/TrainingProject';
@@ -7,6 +7,8 @@ import type { ModelParams } from '../utils/computeUtilization';
 import { getCardSpec } from '../config/computeCards';
 import { diagnoseTraining } from '../utils/trainingFeasibility';
 import { calcTrainingCompute } from '../utils/capabilityCalc';
+import { getCardIndex } from '../utils/cardIndex';
+import { getActiveTechEffects } from '../utils/crossSystemUtils';
 
 /** 生成唯一 id */
 function genId(prefix: string): string {
@@ -30,6 +32,7 @@ export function allocateCardsFromCluster(
   if (!cluster) return null;
 
   const assignments: Record<string, string[]> = {};
+  const allocIndex = getCardIndex(current);
 
   for (const nodeId of cluster.nodes) {
     const node = current.serverNodes.find((n) => n.id === nodeId);
@@ -37,15 +40,12 @@ export function allocateCardsFromCluster(
 
     const nodeCards: string[] = [];
     for (const cardUid of node.installedCards) {
-      // 查找卡实例
-      for (const modelId of Object.keys(current.resourceMeta)) {
-        const pool = current.resourceMeta[modelId] as CardInstance[] | undefined;
-        const card = pool?.find((c) => c.uid === cardUid);
-        if (card && card.status === 'online' && card.assignedProjectId === null) {
-          const spec = getCardSpec(modelId);
-          if (spec && spec.memoryGB >= minMemoryPerCard) {
-            nodeCards.push(cardUid);
-          }
+      // 查找卡实例（O(1) 索引）
+      const entry = allocIndex.get(cardUid);
+      if (entry && entry.card.status === 'online' && entry.card.assignedProjectId === null) {
+        const spec = getCardSpec(entry.modelId);
+        if (spec && spec.memoryGB >= minMemoryPerCard) {
+          nodeCards.push(cardUid);
         }
       }
     }
@@ -99,20 +99,17 @@ function autoDetectParallelConfig(
   // 同时统计集群可用卡数（online 且未占用）。
   let gpuMemory = 0;
   let totalCards = 0;
+  const detectIndex = getCardIndex(current);
   for (const nodeId of cluster.nodes) {
     const node = current.serverNodes.find((n) => n.id === nodeId);
     if (!node) continue;
     for (const cardUid of node.installedCards) {
-      for (const modelId of Object.keys(current.resourceMeta)) {
-        const pool = current.resourceMeta[modelId] as any[];
-        const card = pool?.find((c: any) => c.uid === cardUid);
-        if (card && card.status === 'online' && card.assignedProjectId === null) {
-          totalCards++;
-          const spec = getCardSpec(modelId);
-          if (spec) {
-            gpuMemory = gpuMemory === 0 ? spec.memoryGB : Math.min(gpuMemory, spec.memoryGB);
-          }
-          break;
+      const entry = detectIndex.get(cardUid);
+      if (entry && entry.card.status === 'online' && entry.card.assignedProjectId === null) {
+        totalCards++;
+        const spec = getCardSpec(entry.modelId);
+        if (spec) {
+          gpuMemory = gpuMemory === 0 ? spec.memoryGB : Math.min(gpuMemory, spec.memoryGB);
         }
       }
     }
@@ -130,11 +127,13 @@ function autoDetectParallelConfig(
   // 计算所需缩减因子
   const reductionNeeded = Math.ceil(rawMem / gpuMemory);
 
-  // 获取解锁策略（通过扫描 activeTechEffects）
-  const hasPP = current.activeTechEffects.some(
+  // 获取解锁策略（通过派生技术效果，按 maturity 缩放后判定）
+  // 解锁型 effect 不缩放，maturity≥1 即生效
+  const activeTechEffects = getActiveTechEffects(current);
+  const hasPP = activeTechEffects.some(
     (e) => e.type === 'unlock_parallel_strategy' && e.strategy === 'pp',
   );
-  const hasTP = current.activeTechEffects.some(
+  const hasTP = activeTechEffects.some(
     (e) => e.type === 'unlock_parallel_strategy' && e.strategy === 'tp',
   );
 
@@ -294,15 +293,12 @@ export class StartTrainingCommand implements Command {
     state.update((draft) => {
       draft.trainingProjects.push(project);
       // 标记卡为已分配
+      const markIndex = getCardIndex(draft);
       for (const cardUids of Object.values(assignments)) {
         for (const uid of cardUids) {
-          for (const modelId of Object.keys(draft.resourceMeta)) {
-            const pool = draft.resourceMeta[modelId] as CardInstance[];
-            const card = pool.find((c) => c.uid === uid);
-            if (card) {
-              card.assignedProjectId = project.id;
-              break;
-            }
+          const entry = markIndex.get(uid);
+          if (entry) {
+            entry.card.assignedProjectId = project.id;
           }
         }
       }
@@ -328,15 +324,12 @@ export class CancelTrainingCommand implements Command {
 
     state.update((draft) => {
       // 释放卡分配
+      const cancelIndex = getCardIndex(draft);
       for (const cardUids of Object.values(project.nodeAssignments)) {
         for (const uid of cardUids) {
-          for (const modelId of Object.keys(draft.resourceMeta)) {
-            const pool = draft.resourceMeta[modelId] as CardInstance[];
-            const card = pool.find((c) => c.uid === uid);
-            if (card) {
-              card.assignedProjectId = null;
-              break;
-            }
+          const entry = cancelIndex.get(uid);
+          if (entry) {
+            entry.card.assignedProjectId = null;
           }
         }
       }
@@ -369,18 +362,15 @@ export class ResumeTrainingCommand implements Command {
     }
 
     // 检查是否有可用卡
+    const resumeIndex = getCardIndex(current);
     let hasOnlineCard = false;
     for (const cardUids of Object.values(project.nodeAssignments)) {
       for (const uid of cardUids) {
-        for (const modelId of Object.keys(current.resourceMeta)) {
-          const pool = current.resourceMeta[modelId] as CardInstance[] | undefined;
-          const card = pool?.find((c) => c.uid === uid);
-          if (card && card.status === 'online') {
-            hasOnlineCard = true;
-            break;
-          }
+        const entry = resumeIndex.get(uid);
+        if (entry && entry.card.status === 'online') {
+          hasOnlineCard = true;
+          break;
         }
-        if (hasOnlineCard) break;
       }
       if (hasOnlineCard) break;
     }
@@ -444,20 +434,17 @@ export class ReallocateTrainingCardsCommand implements Command {
     }
 
     // 推断训练最低显存：从现有分配的卡规格取最小值
+    const reallocIndex = getCardIndex(current);
     let minMemoryPerCard = 0;
     for (const cardUids of Object.values(project.nodeAssignments)) {
       for (const uid of cardUids) {
-        for (const modelId of Object.keys(current.resourceMeta)) {
-          const pool = current.resourceMeta[modelId] as CardInstance[] | undefined;
-          const card = pool?.find((c) => c.uid === uid);
-          if (card) {
-            const spec = getCardSpec(modelId);
-            if (spec) {
-              minMemoryPerCard = minMemoryPerCard === 0
-                ? spec.memoryGB
-                : Math.min(minMemoryPerCard, spec.memoryGB);
-            }
-            break;
+        const entry = reallocIndex.get(uid);
+        if (entry) {
+          const spec = getCardSpec(entry.modelId);
+          if (spec) {
+            minMemoryPerCard = minMemoryPerCard === 0
+              ? spec.memoryGB
+              : Math.min(minMemoryPerCard, spec.memoryGB);
           }
         }
       }
@@ -471,14 +458,11 @@ export class ReallocateTrainingCardsCommand implements Command {
         const node = current.serverNodes.find((n) => n.id === nodeId);
         if (!node) continue;
         for (const cardUid of node.installedCards) {
-          for (const modelId of Object.keys(current.resourceMeta)) {
-            const pool = current.resourceMeta[modelId] as CardInstance[] | undefined;
-            const card = pool?.find((c) => c.uid === cardUid);
-            if (card && card.status === 'online' && card.assignedProjectId === null) {
-              const spec = getCardSpec(modelId);
-              if (spec && spec.memoryGB >= minMemoryPerCard) {
-                freeCards.push(cardUid);
-              }
+          const entry = reallocIndex.get(cardUid);
+          if (entry && entry.card.status === 'online' && entry.card.assignedProjectId === null) {
+            const spec = getCardSpec(entry.modelId);
+            if (spec && spec.memoryGB >= minMemoryPerCard) {
+              freeCards.push(cardUid);
             }
           }
         }
@@ -494,15 +478,12 @@ export class ReallocateTrainingCardsCommand implements Command {
       state.update((draft) => {
         const p = draft.trainingProjects.find((x) => x.id === this.projectId);
         if (!p) return;
+        const addIndex = getCardIndex(draft);
         for (const uid of toAdd) {
           // 标记为已分配
-          for (const modelId of Object.keys(draft.resourceMeta)) {
-            const pool = draft.resourceMeta[modelId] as CardInstance[];
-            const card = pool.find((c) => c.uid === uid);
-            if (card) {
-              card.assignedProjectId = this.projectId;
-              break;
-            }
+          const entry = addIndex.get(uid);
+          if (entry) {
+            entry.card.assignedProjectId = this.projectId;
           }
           // 加入 nodeAssignments（按卡所在节点归类）
           let placed = false;
@@ -559,14 +540,11 @@ export class ReallocateTrainingCardsCommand implements Command {
           }
           if (arr.length === 0) delete p.nodeAssignments[nid];
         }
+        const releaseIndex = getCardIndex(draft);
         for (const uid of releaseUids) {
-          for (const modelId of Object.keys(draft.resourceMeta)) {
-            const pool = draft.resourceMeta[modelId] as CardInstance[];
-            const card = pool.find((c) => c.uid === uid);
-            if (card) {
-              card.assignedProjectId = null;
-              break;
-            }
+          const entry = releaseIndex.get(uid);
+          if (entry) {
+            entry.card.assignedProjectId = null;
           }
         }
       });
@@ -622,9 +600,9 @@ export class SetParallelStrategyCommand implements Command {
       return;
     }
 
-    // 检查技术解锁
+    // 检查技术解锁（通过派生技术效果）
     const unlockedStrategies = new Set<string>(['dp']); // DP 始终可用
-    const techEffects = current.activeTechEffects ?? [];
+    const techEffects = getActiveTechEffects(current);
     for (const eff of techEffects) {
       if (eff.type === 'unlock_parallel_strategy') {
         unlockedStrategies.add(eff.strategy);

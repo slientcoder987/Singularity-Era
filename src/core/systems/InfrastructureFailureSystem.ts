@@ -3,6 +3,7 @@ import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { getCardSpec } from '../config/computeCards';
 import { getStaffInfraFailureReduction } from '../utils/crossSystemUtils';
+import { getCardIndex } from '../utils/cardIndex';
 
 /**
  * InfrastructureFailureSystem
@@ -153,29 +154,28 @@ export class InfrastructureFailureSystem implements System {
         if (Math.random() < dailyNodeFailProb * deltaDays) {
           let offlineCount = 0;
           // ★ R3: 该节点所有在线卡变为 offline（不暂停训练，训练降速）
+          const nodeFailIndex = getCardIndex(draft);
           for (const cardUid of node.installedCards) {
-            for (const modelId of Object.keys(draft.resourceMeta)) {
-              const pool = draft.resourceMeta[modelId] as CardInstance[];
-              const card = pool?.find((c) => c.uid === cardUid);
-              if (card && card.status === 'online') {
-                card.status = 'offline';
-                // ★ R1: 节点级故障的卡也自动恢复（5-8 天，比单卡久）
-                card.autoRecoverDay = draft.date + 5 + Math.floor(Math.random() * 4);
-                offlineCount++;
+            const entry = nodeFailIndex.get(cardUid);
+            if (entry && entry.card.status === 'online') {
+              const card = entry.card;
+              card.status = 'offline';
+              // ★ R1: 节点级故障的卡也自动恢复（5-8 天，比单卡久）
+              card.autoRecoverDay = draft.date + 5 + Math.floor(Math.random() * 4);
+              offlineCount++;
 
-                // 从分配中移除（降速，不暂停）
-                if (card.assignedProjectId) {
-                  const project = draft.trainingProjects.find((p) => p.id === card.assignedProjectId);
-                  if (project) {
-                    for (const nid of Object.keys(project.nodeAssignments)) {
-                      project.nodeAssignments[nid] = project.nodeAssignments[nid].filter(
-                        (uid) => uid !== card.uid,
-                      );
-                    }
-                    projectLostCards.set(project.id, (projectLostCards.get(project.id) ?? 0) + 1);
+              // 从分配中移除（降速，不暂停）
+              if (card.assignedProjectId) {
+                const project = draft.trainingProjects.find((p) => p.id === card.assignedProjectId);
+                if (project) {
+                  for (const nid of Object.keys(project.nodeAssignments)) {
+                    project.nodeAssignments[nid] = project.nodeAssignments[nid].filter(
+                      (uid) => uid !== card.uid,
+                    );
                   }
-                  card.assignedProjectId = null;
+                  projectLostCards.set(project.id, (projectLostCards.get(project.id) ?? 0) + 1);
                 }
+                card.assignedProjectId = null;
               }
             }
           }
@@ -301,6 +301,7 @@ export class InfrastructureFailureSystem implements System {
 
       // 找到此 DC 中 broken 的卡
       const brokenCards: Array<{ uid: string; modelId: string; nodeId: string; location: string }> = [];
+      const breakIndex = getCardIndex(draft);
       for (const clusterId of dc.clusters) {
         const cluster = draft.clusters.find((c) => c.id === clusterId);
         if (!cluster) continue;
@@ -308,12 +309,9 @@ export class InfrastructureFailureSystem implements System {
           const node = draft.serverNodes.find((n) => n.id === nodeId);
           if (!node) continue;
           for (const cardUid of node.installedCards) {
-            for (const modelId of Object.keys(draft.resourceMeta)) {
-              const pool = draft.resourceMeta[modelId] as CardInstance[];
-              const card = pool?.find((c) => c.uid === cardUid);
-              if (card && card.status === 'broken') {
-                brokenCards.push({ uid: card.uid, modelId, nodeId, location: card.location ?? 'unknown' });
-              }
+            const entry = breakIndex.get(cardUid);
+            if (entry && entry.card.status === 'broken') {
+              brokenCards.push({ uid: entry.card.uid, modelId: entry.modelId, nodeId, location: entry.card.location ?? 'unknown' });
             }
           }
         }

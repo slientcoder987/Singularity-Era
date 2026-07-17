@@ -1,10 +1,11 @@
-import type { GameState, CardInstance } from '../GameState';
+import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { getCardSpec } from '../config/computeCards';
 import { calcActualPowerDraw, type WorkloadType } from '../utils/computeUtilization';
 import { getRegionModifiers } from './RegionSystem';
 import { getCompanyPowerReduction } from '../utils/crossSystemUtils';
+import { getCardIndex } from '../utils/cardIndex';
 
 /**
  * InfraMaintenanceSystem
@@ -61,6 +62,7 @@ export class InfraMaintenanceSystem implements System {
       // 计算实际功耗：遍历集群中所有在线卡，按训练/空闲分档
       const trainingCardSpecs: Array<NonNullable<ReturnType<typeof getCardSpec>>> = [];
       const idleCardSpecs: Array<NonNullable<ReturnType<typeof getCardSpec>>> = [];
+      const cardIndex = getCardIndex(current);
 
       for (const clusterId of dc.clusters) {
         const cluster = current.clusters.find((c) => c.id === clusterId);
@@ -76,19 +78,15 @@ export class InfraMaintenanceSystem implements System {
           const node = current.serverNodes.find((n) => n.id === nodeId);
           if (!node) continue;
           for (const cardUid of node.installedCards) {
-            for (const modelId of Object.keys(current.resourceMeta)) {
-              const pool = current.resourceMeta[modelId] as CardInstance[] | undefined;
-              const card = pool?.find((c) => c.uid === cardUid);
-              if (card && card.status === 'online') {
-                const spec = getCardSpec(modelId);
-                if (spec) {
-                  if (workload === 'training') {
-                    trainingCardSpecs.push(spec);
-                  } else {
-                    idleCardSpecs.push(spec);
-                  }
+            const entry = cardIndex.get(cardUid);
+            if (entry && entry.card.status === 'online') {
+              const spec = getCardSpec(entry.modelId);
+              if (spec) {
+                if (workload === 'training') {
+                  trainingCardSpecs.push(spec);
+                } else {
+                  idleCardSpecs.push(spec);
                 }
-                break;
               }
             }
           }

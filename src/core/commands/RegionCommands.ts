@@ -172,6 +172,7 @@ export class SetHeadquartersCommand implements Command {
         [StaffRole.SYSTEM_ENGINEER]: 90000,
         [StaffRole.PRODUCT_MANAGER]: 100000,
         [StaffRole.LEGAL_PR]: 85000,
+        [StaffRole.MANAGER]: 150000,
       };
 
       const employees: any[] = [];

@@ -48,6 +48,12 @@ export const ROLE_CONFIG: Record<StaffRole, RoleConfig> = {
     attributeWeights: { charisma: 0.4, intelligence: 0.25, leadership: 0.2, stamina: 0.1, creativity: 0.05 },
     skillPool: ['crisis_management', 'compliance_boost'],
   },
+  [StaffRole.MANAGER]: {
+    displayName: '管理人员',
+    baseSalary: 260_000,
+    attributeWeights: { leadership: 0.45, charisma: 0.25, intelligence: 0.15, stamina: 0.10, creativity: 0.05 },
+    skillPool: ['executive_vision', 'cost_optimization', 'talent_development', 'team_coordination'],
+  },
 };
 
 /**
@@ -134,6 +140,28 @@ export const SKILL_CONFIG: Record<string, Omit<Skill, 'unlocked'>> = {
     effect: { type: 'compliance', value: 15 },
     cost: 1,
   },
+  // ===== 管理人员专属技能 =====
+  executive_vision: {
+    id: 'executive_vision',
+    name: '战略视野',
+    description: '公司管理效率 +2%（多个 manager 解锁可叠加）',
+    effect: { type: 'management_efficiency', value: 0.02 },
+    cost: 2,
+  },
+  cost_optimization: {
+    id: 'cost_optimization',
+    name: '成本优化',
+    description: '全公司薪资支出 -3%（多个解锁可叠加）',
+    effect: { type: 'salary_reduction', value: 0.03 },
+    cost: 2,
+  },
+  talent_development: {
+    id: 'talent_development',
+    name: '人才发展',
+    description: '员工培训速度 +10%（多个解锁可叠加）',
+    effect: { type: 'training_speed', value: 0.10 },
+    cost: 1,
+  },
 };
 
 /** 招聘费用（一次性） */
@@ -172,6 +200,7 @@ export const ROLE_TO_STAFF_RESOURCE: Record<StaffRole, string> = {
   [StaffRole.SYSTEM_ENGINEER]: 'staff_system_engineer',
   [StaffRole.PRODUCT_MANAGER]: 'staff_product_manager',
   [StaffRole.LEGAL_PR]: 'staff_legal_pr',
+  [StaffRole.MANAGER]: 'staff_manager',
 };
 
 // ============================================================
@@ -179,7 +208,7 @@ export const ROLE_TO_STAFF_RESOURCE: Record<StaffRole, string> = {
 // ============================================================
 
 /** 招聘渠道 id */
-export type RecruitmentChannelId = 'campus' | 'job_site' | 'headhunter' | 'internal_promote';
+export type RecruitmentChannelId = 'campus' | 'job_site' | 'headhunter' | 'internal_promote' | 'executive_search';
 
 /** 招聘渠道配置 */
 export interface RecruitmentChannelConfig {
@@ -235,6 +264,15 @@ export const RECRUITMENT_CHANNELS: Record<RecruitmentChannelId, RecruitmentChann
     levelRange: [1, 10],
     candidateCount: 0, // 内部晋升不生成候选人
   },
+  executive_search: {
+    id: 'executive_search',
+    name: '高管猎聘',
+    cost: 200_000,           // 4 倍于普通猎头
+    deliveryDays: 14,
+    baseAttribute: 85,
+    levelRange: [7, 10],     // 仅高管候选
+    candidateCount: 2,
+  },
 };
 
 // ============================================================
@@ -257,6 +295,7 @@ export const ROLE_PRIMARY_ATTR: Record<StaffRole, keyof import('../entities/Empl
   [StaffRole.SYSTEM_ENGINEER]: 'intelligence',
   [StaffRole.PRODUCT_MANAGER]: 'leadership',
   [StaffRole.LEGAL_PR]: 'charisma',
+  [StaffRole.MANAGER]: 'leadership',
 };
 
 // ============================================================

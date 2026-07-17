@@ -1,4 +1,4 @@
-import type { GameState, CardInstance, GameData } from '../GameState';
+import type { GameState, GameData } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { TrainingProject } from '../entities/TrainingProject';
@@ -6,8 +6,8 @@ import type { ComputeCardSpec } from '../entities/ComputeCard';
 import type { Model, CapabilityVector } from '../entities/Model';
 import type { TechEffect } from '../entities/Infrastructure';
 import { getCardSpec } from '../config/computeCards';
-import { TECH_MAP } from '../config/techTree';
-import { generateArchMatrix } from '../config/archEffects';
+import { TECH_MAP, IDEA_TECH_MAP } from '../config/techTree';
+import { scaleTechEffect } from '../utils/techEffectScale';
 import {
   calculateEffectiveCompute,
   type ModelParams,
@@ -22,8 +22,12 @@ import {
   getStaffTrainingStabilityBonus,
   accumulateResearcherContribution,
   getCompanyTrainingComputeReduction,
+  getActiveTechEffects,
 } from '../utils/crossSystemUtils';
 import { getActiveCloudTFLOPS } from '../utils/cloudComputeUtils';
+import { getCardIndex } from '../utils/cardIndex';
+import { aggregateExperiments } from '../utils/researchUtils';
+import type { CapabilityId } from '../config/capabilities';
 import { StaffRole } from '../entities/Employee';
 
 /** 计算期望损失（基于训练进度 0-1） */
@@ -85,7 +89,14 @@ export class TrainingSystem implements System {
     // 设计-18：自动恢复因风险事件暂停的训练（到达 autoResumeDay 时自动恢复）
     const autoResumedProjects: Array<{ id: string; modelName: string }> = [];
 
+    // 缓存全局加成（每系统调用一次，避免每个训练项目重复全员工扫描）
+    const companyComputeReduction = getCompanyTrainingComputeReduction(current);
+    const cloudTFLOPS = getActiveCloudTFLOPS(current);
+    // 预计算派生技术效果（按 maturity 缩放，替代 draft.activeTechEffects）
+    const activeTechEffects = getActiveTechEffects(current);
+
     state.update((draft) => {
+      // 第一遍：自动恢复风险暂停的训练
       for (const project of draft.trainingProjects) {
         if (project.status === 'paused' && project.autoResumeDay !== undefined && draft.date >= project.autoResumeDay) {
           // 检查是否有可用卡再恢复
@@ -104,13 +115,8 @@ export class TrainingSystem implements System {
           // 无可用卡则推迟恢复，保持 paused 但不清除 autoResumeDay
         }
       }
-    });
 
-    for (const p of autoResumedProjects) {
-      events.emit('TRAINING_RESUMED', p.id);
-    }
-
-    state.update((draft) => {
+      // 第二遍：推进训练项目
       for (const project of draft.trainingProjects) {
         if (project.status !== 'training') continue;
 
@@ -149,7 +155,7 @@ export class TrainingSystem implements System {
           cardSpecs,
           cluster,
           dc,
-          draft.activeTechEffects,
+          activeTechEffects,
           modelParams,
           maxSlotsPerNode,
         );
@@ -188,14 +194,20 @@ export class TrainingSystem implements System {
         // 改进 C：传入 projectId 让定向分配的研究员获得 1.5% 加成，被动仅 0.3%
         const staffSpeedMult = getStaffTrainingSpeedMultiplier(draft, project.id);
         // 改进 B：reduce_training_compute 技能降低训练算力需求 → 同等算力推进更快
-        const computeReduction = getCompanyTrainingComputeReduction(draft);
-        const speedMultiplier = staffSpeedMult * (1 + computeReduction);
+        const speedMultiplier = staffSpeedMult * (1 + companyComputeReduction);
         // BUG-2 修复：累加活跃云算力（云算力无集群/电力加成，仅受利用率影响）
-        const cloudTFLOPS = getActiveCloudTFLOPS(draft);
         const cloudUtilization = 0.9;
         const cloudProgress = cloudTFLOPS * cloudUtilization * phaseModifier * deltaDays * speedMultiplier;
         const dailyProgress = result.effectiveTflops * phaseModifier * deltaDays * speedMultiplier + cloudProgress;
         project.computeRemaining = Math.max(0, project.computeRemaining - dailyProgress);
+
+        // 被动成熟度提升（PR2）：训练使用 project.techIds 中的已解锁技术，每日 +0.05
+        for (const techId of project.techIds) {
+          const mat = draft.techMaturity[techId] ?? 0;
+          if (mat >= 1 && mat < 100) {
+            draft.techMaturity[techId] = Math.min(100, mat + 0.05 * deltaDays);
+          }
+        }
 
         // 计算训练进度
         const progressAfter = 1 - project.computeRemaining / project.computeTotal;
@@ -203,11 +215,16 @@ export class TrainingSystem implements System {
         // ===== 损失更新 =====
         const expectedLoss = calcExpectedLoss(progressAfter);
 
-        // 收集技术效果
+        // 收集技术效果（PR2：按 maturity 缩放，支持 IDEA_TECH_MAP 独有技术）
         const techEffects = project.techIds
-          .map((tid) => TECH_MAP[tid as keyof typeof TECH_MAP])
-          .filter(Boolean)
-          .map((t) => t.effect) as TechEffect[];
+          .map((tid) => {
+            const node = TECH_MAP[tid] ?? IDEA_TECH_MAP[tid];
+            if (!node) return null;
+            const mat = current.techMaturity[tid] ?? 0;
+            if (mat < 1) return null;
+            return scaleTechEffect(node.effect, mat);
+          })
+          .filter((e): e is TechEffect => e !== null);
 
         const hasGradientClipping = hasTechEffect(techEffects, 'reduce_training_crash_risk') ||
           project.techIds.includes('gradient_clipping');
@@ -299,15 +316,12 @@ export class TrainingSystem implements System {
           completed.push({ id: project.id, modelName: project.modelName });
 
           // 释放卡分配
+          const releaseIndex = getCardIndex(draft);
           for (const cardUids of Object.values(project.nodeAssignments)) {
             for (const uid of cardUids) {
-              for (const modelId of Object.keys(draft.resourceMeta)) {
-                const pool = draft.resourceMeta[modelId] as CardInstance[];
-                const card = pool.find((c) => c.uid === uid);
-                if (card) {
-                  card.assignedProjectId = null;
-                  break;
-                }
+              const entry = releaseIndex.get(uid);
+              if (entry) {
+                entry.card.assignedProjectId = null;
               }
             }
           }
@@ -322,12 +336,21 @@ export class TrainingSystem implements System {
               scoreParams,
             );
 
-            const archMatrix = generateArchMatrix(draft.archMatrixSeed);
+            // 构建已知架构矩阵：仅包含已实验验证的架构加成（带噪声估计值）
+            // 未实验架构不在 knownArchMatrix 中 → calculateCapabilities 中 archBonus=1.0（无加成）
+            // 这强制玩家先做实验才能获得架构加成，实验系统成为必经路径
+            const knownArchMatrix: Record<string, Partial<Record<CapabilityId, number>>> = {};
+            for (const techId of project.techIds) {
+              const aggregated = aggregateExperiments(draft.experimentResults, techId);
+              if (Object.keys(aggregated).length > 0) {
+                knownArchMatrix[techId] = aggregated;
+              }
+            }
             const capResult = calculateCapabilities(
               baseScore,
               project.contextLength,
               dataset,
-              archMatrix,
+              knownArchMatrix,
               project.techIds,
               techEffects,
             );
@@ -416,6 +439,9 @@ export class TrainingSystem implements System {
     for (const r of releasedModels) {
       events.emit('PLAYER_MODEL_RELEASED', r.name, r.score);
     }
+    for (const p of autoResumedProjects) {
+      events.emit('TRAINING_RESUMED', p.id);
+    }
     for (const p of progressInfo) {
       events.emit('TRAINING_PROGRESS', p);
     }
@@ -427,16 +453,13 @@ export class TrainingSystem implements System {
   /** 从项目分配方案中收集卡规格 */
   private collectCardSpecs(data: GameData, project: TrainingProject): ComputeCardSpec[] {
     const specs: ComputeCardSpec[] = [];
+    const index = getCardIndex(data);
     for (const cardUids of Object.values(project.nodeAssignments)) {
       for (const uid of cardUids) {
-        for (const modelId of Object.keys(data.resourceMeta)) {
-          const pool = data.resourceMeta[modelId] as CardInstance[] | undefined;
-          const card = pool?.find((c) => c.uid === uid);
-          if (card && card.status === 'online') {
-            const spec = getCardSpec(modelId);
-            if (spec) specs.push(spec);
-            break;
-          }
+        const entry = index.get(uid);
+        if (entry && entry.card.status === 'online') {
+          const spec = getCardSpec(entry.modelId);
+          if (spec) specs.push(spec);
         }
       }
     }

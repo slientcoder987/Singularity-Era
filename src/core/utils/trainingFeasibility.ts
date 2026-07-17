@@ -1,8 +1,9 @@
 import type { ComputeCardSpec } from '../entities/ComputeCard';
 import type { Cluster, ServerNode } from '../entities/Infrastructure';
-import type { GameState, CardInstance } from '../GameState';
+import type { GameState } from '../GameState';
 import type { ParallelConfig } from '../entities/TrainingProject';
 import { getCardSpec } from '../config/computeCards';
+import { getCardIndex } from './cardIndex';
 
 /**
  * 训练可行性评估结果
@@ -217,19 +218,16 @@ export function diagnoseTraining(
   // 2. 收集集群内所有在线卡规格
   const cardSpecs: ComputeCardSpec[] = [];
   const nodes: ServerNode[] = [];
+  const diagIndex = getCardIndex(current);
   for (const nodeId of cluster.nodes) {
     const node = current.serverNodes.find((n) => n.id === nodeId);
     if (!node) continue;
     nodes.push(node);
     for (const cardUid of node.installedCards) {
-      for (const modelId of Object.keys(current.resourceMeta)) {
-        const pool = current.resourceMeta[modelId] as CardInstance[] | undefined;
-        const card = pool?.find((c) => c.uid === cardUid);
-        if (card && card.status === 'online' && card.assignedProjectId === null) {
-          const spec = getCardSpec(modelId);
-          if (spec) cardSpecs.push(spec);
-          break;
-        }
+      const entry = diagIndex.get(cardUid);
+      if (entry && entry.card.status === 'online' && entry.card.assignedProjectId === null) {
+        const spec = getCardSpec(entry.modelId);
+        if (spec) cardSpecs.push(spec);
       }
     }
   }

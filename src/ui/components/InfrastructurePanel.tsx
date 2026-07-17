@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { List, type RowComponentProps } from 'react-window';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import type { CardInstance } from '../../core/GameState';
@@ -66,6 +67,47 @@ export function InfrastructurePanel() {
 
 /* ============== 拓扑视图 ============== */
 
+interface TopologyRow {
+  kind: 'dc' | 'cluster' | 'node' | 'card' | 'freeCluster' | 'freeNode' | 'freeNodesHeader';
+  depth: number;
+  icon: string;
+  label: string;
+  hint: string;
+}
+
+interface TopologyRowProps {
+  rows: TopologyRow[];
+}
+
+function TopologyRowComponent({ index, style, rows }: RowComponentProps<TopologyRowProps>) {
+  const row = rows[index];
+  const paddingLeft = row.depth * 12 + 4;
+  return (
+    <div
+      className={row.depth === 0 ? styles.treeNode : styles.treeChild}
+      style={{
+        ...style,
+        display: 'flex',
+        alignItems: 'center',
+        paddingLeft: `${paddingLeft}px`,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        flexWrap: 'nowrap',
+      }}
+    >
+      <span className={styles.devRowLabel} style={{ minWidth: 0, flexShrink: 0 }}>
+        {row.icon} {row.label}
+      </span>
+      <span
+        className={styles.devHint}
+        style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}
+      >
+        {row.hint}
+      </span>
+    </div>
+  );
+}
+
 function TopologyTab() {
   const dataCenters = useGameState((s) => s.dataCenters);
   const clusters = useGameState((s) => s.clusters);
@@ -73,153 +115,132 @@ function TopologyTab() {
   const resourceMeta = useGameState((s) => s.resourceMeta);
   const infraEventLog = useGameState((s) => s.infraEventLog);
 
-  const freeNodes = serverNodes.filter((n) => n.clusterId === null);
-  const freeClusters = clusters.filter((c) => c.dataCenterId === null);
-
-  const getCard = (uid: string): CardInstance | undefined => {
+  const cardMap = useMemo(() => {
+    const map = new Map<string, { card: CardInstance; modelId: string }>();
     for (const key of Object.keys(resourceMeta)) {
       const pool = resourceMeta[key] as CardInstance[] | undefined;
-      const card = pool?.find((c) => c.uid === uid);
-      if (card) return card;
-    }
-    return undefined;
-  };
-
-  const getNodeMemory = (nodeId: string): { memoryGB: number; bandwidthGBs: number } => {
-    const node = serverNodes.find((n) => n.id === nodeId);
-    if (!node) return { memoryGB: 0, bandwidthGBs: 0 };
-    let memoryGB = 0;
-    let bandwidthGBs = 0;
-    for (const cardUid of node.installedCards) {
-      const card = getCard(cardUid);
-      const spec = card ? getCardSpec(card.modelId) : undefined;
-      if (spec) {
-        memoryGB += spec.memoryGB;
-        bandwidthGBs += spec.memoryBandwidth;
+      if (!pool) continue;
+      for (const card of pool) {
+        map.set(card.uid, { card, modelId: key });
       }
     }
-    return { memoryGB, bandwidthGBs };
-  };
+    return map;
+  }, [resourceMeta]);
+
+  const nodeMemoryMap = useMemo(() => {
+    const map = new Map<string, { memoryGB: number; bandwidthGBs: number }>();
+    for (const node of serverNodes) {
+      let memoryGB = 0;
+      let bandwidthGBs = 0;
+      for (const cardUid of node.installedCards) {
+        const entry = cardMap.get(cardUid);
+        const spec = entry ? getCardSpec(entry.modelId) : undefined;
+        if (spec) {
+          memoryGB += spec.memoryGB;
+          bandwidthGBs += spec.memoryBandwidth;
+        }
+      }
+      map.set(node.id, { memoryGB, bandwidthGBs });
+    }
+    return map;
+  }, [serverNodes, cardMap]);
+
+  const flattenedRows = useMemo<TopologyRow[]>(() => {
+    const rows: TopologyRow[] = [];
+    const freeNodes = serverNodes.filter((n) => n.clusterId === null);
+    const freeClusters = clusters.filter((c) => c.dataCenterId === null);
+
+    // 数据中心 → 集群 → 节点 → 卡
+    for (const dc of dataCenters) {
+      rows.push({
+        kind: 'dc', depth: 0, icon: '🏢', label: dc.name,
+        hint: `${dc.maxPowerMW}MW · PUE ${dc.currentPue.toFixed(3)}(基准${dc.basePue.toFixed(2)}) · ${dc.coolingType} · ${dc.clusters.length}集群 · $${dc.powerCostPerKWh}/kWh${dc.currentPue > dc.basePue * 1.02 ? ' · ⚠️ 需维护' : ''}`,
+      });
+      for (const clusterId of dc.clusters) {
+        const cluster = clusters.find((c) => c.id === clusterId);
+        if (!cluster) continue;
+        rows.push({
+          kind: 'cluster', depth: 1, icon: '🔗', label: cluster.name,
+          hint: `${cluster.network} · ${cluster.nodes.length}/${cluster.maxNodes}节点 · +${(cluster.utilizationBonus * 100).toFixed(0)}% · ${cluster.networkBandwidth}GB/s · TP×${cluster.maxTPDegree}`,
+        });
+        for (const nodeId of cluster.nodes) {
+          const node = serverNodes.find((n) => n.id === nodeId);
+          if (!node) continue;
+          const mem = nodeMemoryMap.get(nodeId) ?? { memoryGB: 0, bandwidthGBs: 0 };
+          const nvGen = node.nvswitchGeneration ? ` · NVSwitch Gen${node.nvswitchGeneration}` : '';
+          rows.push({
+            kind: 'node', depth: 2, icon: '🖥️', label: node.name,
+            hint: `${node.installedCards.length}/${node.slotCount}卡 · ${mem.memoryGB}GB · ${mem.bandwidthGBs}GB/s · ${node.interconnect}(${node.interconnectBandwidth}GB/s) · 可靠性${node.reliability}${nvGen}`,
+          });
+          for (const cardUid of node.installedCards) {
+            const entry = cardMap.get(cardUid);
+            const card = entry?.card;
+            const spec = entry ? getCardSpec(entry.modelId) : undefined;
+            rows.push({
+              kind: 'card', depth: 3, icon: '·',
+              label: `${spec?.name ?? card?.modelId ?? '未知'} (${card?.status ?? '未知'})`,
+              hint: spec ? `${spec.memoryGB}GB · ${spec.memoryBandwidth}GB/s` : '',
+            });
+          }
+        }
+      }
+    }
+
+    // 未入数据中心的集群
+    for (const cluster of freeClusters) {
+      rows.push({
+        kind: 'freeCluster', depth: 0, icon: '🔗', label: `${cluster.name}（未入数据中心）`,
+        hint: `${cluster.network} · ${cluster.nodes.length}/${cluster.maxNodes}节点 · ${cluster.networkBandwidth}GB/s · TP×${cluster.maxTPDegree}`,
+      });
+      for (const nodeId of cluster.nodes) {
+        const node = serverNodes.find((n) => n.id === nodeId);
+        if (!node) continue;
+        const mem = nodeMemoryMap.get(nodeId) ?? { memoryGB: 0, bandwidthGBs: 0 };
+        const nvGen = node.nvswitchGeneration ? ` · NVSwitch Gen${node.nvswitchGeneration}` : '';
+        rows.push({
+          kind: 'node', depth: 1, icon: '🖥️', label: node.name,
+          hint: `${node.installedCards.length}/${node.slotCount}卡 · ${mem.memoryGB}GB · ${mem.bandwidthGBs}GB/s · ${node.interconnect}(${node.interconnectBandwidth}GB/s) · 可靠性${node.reliability}${nvGen}`,
+        });
+      }
+    }
+
+    // 独立节点
+    if (freeNodes.length > 0) {
+      rows.push({
+        kind: 'freeNodesHeader', depth: 0, icon: '', label: '独立节点（未加入集群）', hint: '',
+      });
+      for (const node of freeNodes) {
+        const mem = nodeMemoryMap.get(node.id) ?? { memoryGB: 0, bandwidthGBs: 0 };
+        const nvGen = node.nvswitchGeneration ? ` · NVSwitch Gen${node.nvswitchGeneration}` : '';
+        const installHint = node.installedCards.length < node.slotCount
+          ? ` · 可安装 ${node.slotCount - node.installedCards.length} 张卡`
+          : '';
+        rows.push({
+          kind: 'freeNode', depth: 1, icon: '🖥️', label: node.name,
+          hint: `${node.installedCards.length}/${node.slotCount}卡 · ${mem.memoryGB}GB · ${mem.bandwidthGBs}GB/s · ${node.interconnect}(${node.interconnectBandwidth}GB/s) · 可靠性${node.reliability}${nvGen}${installHint}`,
+        });
+      }
+    }
+
+    return rows;
+  }, [dataCenters, clusters, serverNodes, cardMap, nodeMemoryMap]);
 
   if (dataCenters.length === 0 && clusters.length === 0 && serverNodes.length === 0) {
     return <div className={styles.emptyHint}>尚无基础设施，请前往"建造"标签建设</div>;
   }
 
+  const listHeight = Math.min(flattenedRows.length * 28, 600);
+
   return (
     <div className={styles.tabBody}>
-      {dataCenters.map((dc) => (
-        <div key={dc.id} className={styles.treeNode}>
-          <div className={styles.devRow}>
-            <span className={styles.devRowLabel}>🏢 {dc.name}</span>
-            <span className={styles.devHint}>
-              {dc.maxPowerMW}MW · PUE {dc.currentPue.toFixed(3)}(基准{dc.basePue.toFixed(2)}) · {dc.coolingType} · {dc.clusters.length}集群 · ${dc.powerCostPerKWh}/kWh
-              {dc.currentPue > dc.basePue * 1.02 && ' · ⚠️ 需维护'}
-            </span>
-          </div>
-          {dc.clusters.map((clusterId) => {
-            const cluster = clusters.find((c) => c.id === clusterId);
-            if (!cluster) return null;
-            return (
-              <div key={clusterId} className={styles.treeChild}>
-                <div className={styles.devRow}>
-                  <span className={styles.devRowLabel}>🔗 {cluster.name}</span>
-                  <span className={styles.devHint}>
-                    {cluster.network} · {cluster.nodes.length}/{cluster.maxNodes}节点 · +{(cluster.utilizationBonus * 100).toFixed(0)}% · {cluster.networkBandwidth}GB/s · TP×{cluster.maxTPDegree}
-                  </span>
-                </div>
-                {cluster.nodes.map((nodeId) => {
-                  const node = serverNodes.find((n) => n.id === nodeId);
-                  if (!node) return null;
-                  const { memoryGB, bandwidthGBs } = getNodeMemory(nodeId);
-                  const nvGen = node.nvswitchGeneration
-                    ? ` · NVSwitch Gen${node.nvswitchGeneration}`
-                    : '';
-                  return (
-                    <div key={nodeId} className={styles.treeChild}>
-                      <div className={styles.devRow}>
-                        <span className={styles.devRowLabel}>🖥️ {node.name}</span>
-                        <span className={styles.devHint}>
-                          {node.installedCards.length}/{node.slotCount}卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}({node.interconnectBandwidth}GB/s) · 可靠性{node.reliability}{nvGen}
-                        </span>
-                      </div>
-                      {node.installedCards.map((cardUid) => {
-                        const card = getCard(cardUid);
-                        const spec = card ? getCardSpec(card.modelId) : undefined;
-                        return (
-                          <div key={cardUid} className={styles.treeChild}>
-                            <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
-                              · {spec?.name ?? card?.modelId} ({card?.status})
-                              {spec && ` · ${spec.memoryGB}GB · ${spec.memoryBandwidth}GB/s`}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      ))}
-
-      {freeClusters.map((cluster) => (
-        <div key={cluster.id} className={styles.treeNode}>
-          <div className={styles.devRow}>
-            <span className={styles.devRowLabel}>🔗 {cluster.name}（未入数据中心）</span>
-            <span className={styles.devHint}>
-              {cluster.network} · {cluster.nodes.length}/{cluster.maxNodes}节点 · {cluster.networkBandwidth}GB/s · TP×{cluster.maxTPDegree}
-            </span>
-          </div>
-          {cluster.nodes.map((nodeId) => {
-            const node = serverNodes.find((n) => n.id === nodeId);
-            if (!node) return null;
-            const { memoryGB, bandwidthGBs } = getNodeMemory(nodeId);
-            const nvGen = node.nvswitchGeneration
-              ? ` · NVSwitch Gen${node.nvswitchGeneration}`
-              : '';
-            return (
-              <div key={nodeId} className={styles.treeChild}>
-                <div className={styles.devRow}>
-                  <span className={styles.devRowLabel}>🖥️ {node.name}</span>
-                  <span className={styles.devHint}>
-                    {node.installedCards.length}/{node.slotCount}卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}({node.interconnectBandwidth}GB/s) · 可靠性{node.reliability}{nvGen}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ))}
-
-      {freeNodes.length > 0 && (
-        <div className={styles.treeNode}>
-          <div className={styles.devRow}>
-            <span className={styles.devRowLabel}>独立节点（未加入集群）</span>
-          </div>
-          {freeNodes.map((node) => {
-            const { memoryGB, bandwidthGBs } = getNodeMemory(node.id);
-            const nvGen = node.nvswitchGeneration
-              ? ` · NVSwitch Gen${node.nvswitchGeneration}`
-              : '';
-            return (
-              <div key={node.id} className={styles.treeChild}>
-                <div className={styles.devRow}>
-                  <span className={styles.devRowLabel}>🖥️ {node.name}</span>
-                  <span className={styles.devHint}>
-                    {node.installedCards.length}/{node.slotCount}卡 · {memoryGB}GB · {bandwidthGBs}GB/s · {node.interconnect}({node.interconnectBandwidth}GB/s) · 可靠性{node.reliability}{nvGen}
-                  </span>
-                </div>
-                {node.installedCards.length < node.slotCount && (
-                  <div className={styles.devHint} style={{ paddingLeft: '20px' }}>
-                    可安装 {node.slotCount - node.installedCards.length} 张卡
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <List<TopologyRowProps>
+        rowComponent={TopologyRowComponent}
+        rowCount={flattenedRows.length}
+        rowHeight={28}
+        rowProps={{ rows: flattenedRows }}
+        style={{ height: listHeight }}
+        overscanCount={5}
+      />
 
       {/* 事件日志 */}
       {infraEventLog.length > 0 && (
@@ -301,7 +322,7 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
     });
   };
 
-  const getUninstalledCards = (): Array<{ uid: string; modelId: string }> => {
+  const uninstalledCards = useMemo(() => {
     const cards: Array<{ uid: string; modelId: string }> = [];
     for (const key of Object.keys(resourceMeta)) {
       const pool = resourceMeta[key] as CardInstance[] | undefined;
@@ -313,9 +334,45 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
       }
     }
     return cards;
-  };
+  }, [resourceMeta]);
 
-  const uninstalledCards = getUninstalledCards();
+  const offlineCardUids = useMemo(() => {
+    const set = new Set<string>();
+    for (const key of Object.keys(resourceMeta)) {
+      const pool = resourceMeta[key] as CardInstance[] | undefined;
+      if (!pool) continue;
+      for (const card of pool) {
+        if (card.status === 'offline') set.add(card.uid);
+      }
+    }
+    return set;
+  }, [resourceMeta]);
+
+  const brokenNodes = useMemo(
+    () => serverNodes.filter((n) => n.installedCards.some((uid) => offlineCardUids.has(uid))),
+    [serverNodes, offlineCardUids],
+  );
+
+  const faultedCards = useMemo(() => {
+    const cards: Array<{ uid: string; modelId: string; status: string; specName: string; repairCost: number }> = [];
+    for (const key of Object.keys(resourceMeta)) {
+      const pool = resourceMeta[key] as CardInstance[] | undefined;
+      if (!pool) continue;
+      for (const card of pool) {
+        if (card.status === 'offline' || card.status === 'broken') {
+          const spec = getCardSpec(key);
+          cards.push({
+            uid: card.uid,
+            modelId: key,
+            status: card.status,
+            specName: spec?.name ?? key,
+            repairCost: spec ? Math.ceil(spec.unitCost * 0.20) : 0,
+          });
+        }
+      }
+    }
+    return cards;
+  }, [resourceMeta]);
 
   return (
     <div className={styles.tabBody}>
@@ -855,101 +912,65 @@ function BuildTab({ game }: { game: ReturnType<typeof useGame> }) {
           )}
 
           {/* 节点修复（节点故障后所有卡离线） */}
-          {(() => {
-            const nodeHasOfflineCard = (nodeId: string): boolean => {
-              const node = serverNodes.find((n) => n.id === nodeId);
-              if (!node) return false;
-              for (const cardUid of node.installedCards) {
-                for (const modelId of Object.keys(resourceMeta)) {
-                  const pool = resourceMeta[modelId] as CardInstance[] | undefined;
-                  const card = pool?.find((c) => c.uid === cardUid);
-                  if (card && card.status === 'offline') return true;
-                }
-              }
-              return false;
-            };
-            const brokenNodes = serverNodes.filter((n) => nodeHasOfflineCard(n.id));
-            if (brokenNodes.length === 0) return null;
-            return (
-              <div className={styles.devRow}>
-                <select
-                  className={styles.select}
-                  value={repairNodeId}
-                  onChange={(e) => setRepairNodeId(e.target.value)}
-                >
-                  <option value="">选择故障节点...</option>
-                  {brokenNodes.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.name} · 修复 ${(n.maintenanceCost * 10).toLocaleString()}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className={styles.btn}
-                  disabled={!repairNodeId}
-                  onClick={() => {
-                    game.executeCommand(new RepairNodeCommand(repairNodeId));
-                    setRepairNodeId('');
-                  }}
-                >
-                  修复节点
-                </button>
-              </div>
-            );
-          })()}
+          {brokenNodes.length > 0 && (
+            <div className={styles.devRow}>
+              <select
+                className={styles.select}
+                value={repairNodeId}
+                onChange={(e) => setRepairNodeId(e.target.value)}
+              >
+                <option value="">选择故障节点...</option>
+                {brokenNodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} · 修复 ${(n.maintenanceCost * 10).toLocaleString()}
+                  </option>
+                ))}
+              </select>
+              <button
+                className={styles.btn}
+                disabled={!repairNodeId}
+                onClick={() => {
+                  game.executeCommand(new RepairNodeCommand(repairNodeId));
+                  setRepairNodeId('');
+                }}
+              >
+                修复节点
+              </button>
+            </div>
+          )}
 
           {/* 卡修复/报废 */}
-          {(() => {
-            const faultedCards: Array<{ uid: string; modelId: string; status: string; specName: string; repairCost: number }> = [];
-            for (const modelId of Object.keys(resourceMeta)) {
-              const pool = resourceMeta[modelId] as CardInstance[] | undefined;
-              if (!pool) continue;
-              for (const card of pool) {
-                if (card.status === 'offline' || card.status === 'broken') {
-                  const spec = getCardSpec(modelId);
-                  faultedCards.push({
-                    uid: card.uid,
-                    modelId,
-                    status: card.status,
-                    specName: spec?.name ?? modelId,
-                    repairCost: spec ? Math.ceil(spec.unitCost * 0.20) : 0,
-                  });
-                }
-              }
-            }
-            if (faultedCards.length === 0) return null;
-            return (
-              <div className={styles.devRow}>
-                <select
-                  className={styles.select}
-                  value={repairCardUid}
-                  onChange={(e) => setRepairCardUid(e.target.value)}
-                >
-                  <option value="">选择故障卡...</option>
-                  {faultedCards.map((c) => (
-                    <option key={c.uid} value={c.uid}>
-                      {c.specName} ({c.status}) · {c.uid.slice(-6)} · {c.status === 'offline' ? `修复 $${c.repairCost}` : '报废回收'}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className={styles.btn}
-                  disabled={!repairCardUid}
-                  onClick={() => {
-                    const card = faultedCards.find((c) => c.uid === repairCardUid);
-                    if (card?.status === 'offline') {
-                      game.executeCommand(new RepairCardCommand(repairCardUid));
-                    } else {
-                      game.executeCommand(new ScrapCardCommand(repairCardUid));
-                    }
-                    setRepairCardUid('');
-                  }}
-                >
-                  {faultedCards.find((c) => c.uid === repairCardUid)?.status === 'broken' ? '报废' : '修复'}
-                </button>
-              </div>
-            );
-          })()}
+          {faultedCards.length > 0 && (
+            <div className={styles.devRow}>
+              <select
+                className={styles.select}
+                value={repairCardUid}
+                onChange={(e) => setRepairCardUid(e.target.value)}
+              >
+                <option value="">选择故障卡...</option>
+                {faultedCards.map((c) => (
+                  <option key={c.uid} value={c.uid}>
+                    {c.specName} ({c.status}) · {c.uid.slice(-6)} · {c.status === 'offline' ? `修复 $${c.repairCost}` : '报废回收'}
+                  </option>
+                ))}
+              </select>
+              <button
+                className={styles.btn}
+                disabled={!repairCardUid}
+                onClick={() => {
+                  const card = faultedCards.find((c) => c.uid === repairCardUid);
+                  if (card?.status === 'offline') {
+                    game.executeCommand(new RepairCardCommand(repairCardUid));
+                  } else {
+                    game.executeCommand(new ScrapCardCommand(repairCardUid));
+                  }
+                  setRepairCardUid('');
+                }}
+              >
+                {faultedCards.find((c) => c.uid === repairCardUid)?.status === 'broken' ? '报废' : '修复'}
+              </button>
+            </div>
+          )}
         </>
       )}
 

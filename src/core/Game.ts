@@ -5,6 +5,8 @@ import type { System } from './interfaces/System';
 import type { Command } from './interfaces/Command';
 import { ResourceRegistry } from './resources/ResourceRegistry';
 import { INITIAL_RESOURCES } from './config/resources';
+import { COLLECTION_MAP } from './config/dataAcquisition';
+import { IDEA_TECH_MAP } from './config/techTree';
 
 /**
  * Game 主控制器
@@ -122,11 +124,9 @@ export class Game {
    */
   private migrateOldData(data: GameData): void {
     if (Array.isArray(data.dataCollectionProjects)) {
-      // 延迟导入避免循环依赖
-      const { COLLECTION_MAP } = require('./config/dataAcquisition');
       for (const proj of data.dataCollectionProjects) {
         if (proj.normalEngineerCount === undefined) {
-          const route = COLLECTION_MAP[proj.routeId];
+          const route = COLLECTION_MAP[proj.routeId as keyof typeof COLLECTION_MAP];
           // 使用历史反推公式计算迁移值
           proj.normalEngineerCount = route
             ? Math.max(0, Math.round(proj.dailyRate / route.baseRate - proj.engineerIds.length * 1.5))
@@ -144,6 +144,66 @@ export class Game {
             round.terms.sharesOutstanding = Math.round((round.amount * 1_000_000) / price);
           }
         }
+      }
+    }
+
+    // 公司管理系统迁移（v2.x 引入）：补齐 managementMode / executives 等字段
+    if (data.managementMode === undefined) {
+      data.managementMode = 'flat';
+    }
+    if (data.managementModeChangedDay === undefined) {
+      data.managementModeChangedDay = -999;
+    }
+    if (data.executives === undefined) {
+      data.executives = { ceoId: null, cooId: null, cfoId: null, ctoId: null };
+    } else {
+      // 防御性补齐（万一未来加第 5 个高管职位）
+      data.executives.ceoId ??= null;
+      data.executives.cooId ??= null;
+      data.executives.cfoId ??= null;
+      data.executives.ctoId ??= null;
+    }
+
+    // ===== 研发系统扩展迁移（技术成熟度 / idea / 小公司 / 开源） =====
+    // 1. unlockedTechs: string[] → techMaturity: Record<string, number>
+    //    旧 unlockedTechs 中每个 techId 迁移为 maturity=50；pretraining 特殊置 100
+    if (!data.techMaturity) {
+      const oldUnlocked = (data as any).unlockedTechs;
+      const newMat: Record<string, number> = {};
+      if (Array.isArray(oldUnlocked)) {
+        for (const techId of oldUnlocked) newMat[techId] = 50;
+      }
+      // pretraining 始终视为初始已解锁，maturity=100
+      newMat['pretraining'] = 100;
+      data.techMaturity = newMat;
+      delete (data as any).unlockedTechs;
+    } else {
+      // 防御性：确保 pretraining 在 techMaturity 中
+      data.techMaturity['pretraining'] ??= 100;
+    }
+
+    // 2. researchingTech 补齐 researcherIds / dailyCost（PR2 起使用）
+    if (data.researchingTech) {
+      if (!Array.isArray(data.researchingTech.researcherIds)) {
+        data.researchingTech.researcherIds = [];
+      }
+      if (typeof data.researchingTech.dailyCost !== 'number') {
+        data.researchingTech.dailyCost = 0;
+      }
+    }
+
+    // 3. 新增字段防御性补齐
+    data.pendingIdeas ??= [];
+    data.smallCompanies ??= [];
+    data.openSourceOffers ??= [];
+    data.acceptedIdeaTechs ??= [];
+    data.lastSmallCompanyRefreshDay ??= -999;
+    data.lastOpenSourceDay ??= {};
+
+    // 4. 加载已接受的独有技术，重建运行时 IDEA_TECH_MAP
+    if (data.acceptedIdeaTechs.length > 0) {
+      for (const techNode of data.acceptedIdeaTechs) {
+        IDEA_TECH_MAP[techNode.id] = techNode;
       }
     }
   }

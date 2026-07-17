@@ -65,18 +65,24 @@ export function calcEmployeeEfficiency(
   );
 }
 
-/** 普通员工效率：1.0 × 部门加成 × 协同加成 × 地区人才加成 */
+/** 普通员工效率：1.0 × 部门加成 × 协同加成 × 地区人才加成 × 管理效率
+ *
+ * 新增 managementEfficiency 参数（0.5~1.3），默认 1.0 保持向后兼容。
+ * 调用方应通过 crossSystemUtils.getManagementEfficiency(data) 计算后传入。
+ */
 export function calcNormalEfficiency(
   dept: Department | undefined,
   departments: Department[],
   employees: Employee[],
   region: Region | null,
+  managementEfficiency: number = 1.0,
 ): number {
   const talentBonus = region ? (region.talentIndex - 50) / 100 : 0;
   return (
     (1.0 + talentBonus) *
     departmentBonus(dept, employees) *
-    companyCoordination(departments, employees)
+    companyCoordination(departments, employees) *
+    managementEfficiency
   );
 }
 

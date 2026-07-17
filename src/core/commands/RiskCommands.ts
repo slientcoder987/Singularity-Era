@@ -4,6 +4,7 @@
 import type { Command } from '../interfaces/Command';
 import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
+import { isTechUnlocked } from '../utils/techLookup';
 
 /** 和解诉讼（降低 legal_debt，花费资金） */
 export class SettleLawsuitCommand implements Command {
@@ -55,7 +56,7 @@ export class ConductAuditCommand implements Command {
 
   execute(state: GameState, events: EventBus): void {
     const current = state.read();
-    if (!current.unlockedTechs.includes('alignment_v1')) {
+    if (!isTechUnlocked(current, 'alignment_v1')) {
       events.emit('AUDIT_REJECTED', { reason: '需要对齐v1技术' });
       return;
     }

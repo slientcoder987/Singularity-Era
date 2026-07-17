@@ -45,6 +45,12 @@ export class FireEmployeeCommand implements Command {
           training.status = 'cancelled';
         }
       }
+      // 清理高管槽位（设计：fire 高管时自动卸任）
+      const exec = draft.executives;
+      if (exec.ceoId === this.employeeId) exec.ceoId = null;
+      if (exec.cooId === this.employeeId) exec.cooId = null;
+      if (exec.cfoId === this.employeeId) exec.cfoId = null;
+      if (exec.ctoId === this.employeeId) exec.ctoId = null;
       draft.employees = draft.employees.filter((e) => e.id !== this.employeeId);
     });
 

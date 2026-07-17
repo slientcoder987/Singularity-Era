@@ -2,8 +2,11 @@ import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { CompetitorState, CompetitorIntel } from '../entities/Competitor';
+import type { OpenSourceOffer } from '../entities/OpenSourceOffer';
 import { COMPETITOR_TEMPLATES } from '../entities/Competitor';
 import { updateCompetitorStates } from '../utils/marketCalc';
+import { ALL_TECH, IDEA_TECH_MAP } from '../config/techTree';
+import { OPEN_SOURCE_TECH_POOL } from '../config/openSourcePool';
 
 /** 生成唯一 id */
 function genId(prefix: string): string {
@@ -256,6 +259,75 @@ export class CompetitorSystem implements System {
 
     // 同步到 marketCalc 缓存
     updateCompetitorStates(survivors);
+
+    // ---- 开源事件触发（仅 open_source 策略的存活公司）----
+    // 每 30~60 天开源一次；60% 独有技术池 / 40% 主技术树未解锁技术。
+    // 采纳窗口 14 天，初始 maturity=30，成本 $50k~$200k。
+    const openSourceEvents: Array<{ compName: string; offer: OpenSourceOffer }> = [];
+    for (const comp of survivors) {
+      if (comp.strategy !== 'open_source') continue;
+      const lastDay = current.lastOpenSourceDay[comp.id] ?? -999;
+      const cooldown = 30 + Math.floor(Math.random() * 31); // 30~60 天
+      if (current.date - lastDay < cooldown) continue;
+
+      // 选技术：60% 独有池 / 40% 主技术树未解锁
+      const usePool = Math.random() < 0.6;
+      let techId = '';
+      let techName = '';
+      let techDesc = '';
+
+      if (usePool) {
+        const available = OPEN_SOURCE_TECH_POOL.filter((t) => !IDEA_TECH_MAP[t.id]);
+        if (available.length > 0) {
+          const picked = available[Math.floor(Math.random() * available.length)];
+          techId = picked.id;
+          techName = picked.name;
+          techDesc = picked.description;
+        }
+      }
+      if (!techId) {
+        const available = ALL_TECH.filter(
+          (t) => (current.techMaturity[t.id] ?? 0) < 1 && t.researchDays > 0,
+        );
+        if (available.length > 0) {
+          const picked = available[Math.floor(Math.random() * available.length)];
+          techId = picked.id;
+          techName = picked.name;
+          techDesc = picked.description;
+        }
+      }
+      if (!techId) continue;
+
+      const adoptionCost = Math.round(50_000 + Math.random() * 150_000); // $50k~$200k
+      const offer: OpenSourceOffer = {
+        id: genId(`offer-${comp.id}-${current.date}`),
+        techId,
+        techName,
+        techDescription: techDesc,
+        source: comp.name,
+        publishedDay: current.date,
+        adoptionCost,
+        initialMaturity: 30,
+        expiresDay: current.date + 14,
+      };
+      openSourceEvents.push({ compName: comp.name, offer });
+    }
+
+    if (openSourceEvents.length > 0) {
+      state.update((draft) => {
+        for (const { offer } of openSourceEvents) {
+          draft.openSourceOffers.push(offer);
+        }
+        for (const { compName } of openSourceEvents) {
+          // 反查 comp.id 写入 lastOpenSourceDay
+          const comp = survivors.find((c) => c.name === compName);
+          if (comp) draft.lastOpenSourceDay[comp.id] = draft.date;
+        }
+      });
+      for (const { compName, offer } of openSourceEvents) {
+        events.emit('OPEN_SOURCE_PUBLISHED', { compName, offer });
+      }
+    }
   }
 
   private simulateCompetitor(comp: CompetitorState, day: number, events: EventBus): void {

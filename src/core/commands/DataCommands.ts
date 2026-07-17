@@ -12,6 +12,8 @@ import { ROLE_TO_STAFF_RESOURCE } from '../config/employees';
 import type { DataDomainId, Dataset, DataDomain } from '../entities/Dataset';
 import { INITIAL_DATA_DOMAINS } from '../config/datasets';
 import type { DataCollectionProject } from '../entities/DataCollectionProject';
+import { isTechUnlocked } from '../utils/techLookup';
+import { getActiveTechEffects } from '../utils/crossSystemUtils';
 
 /** 生成唯一 id */
 function genId(prefix: string): string {
@@ -39,7 +41,7 @@ export class AcquireDataCommand implements Command {
       return;
     }
 
-    if (route.requiredTech && !current.unlockedTechs.includes(route.requiredTech)) {
+    if (route.requiredTech && !isTechUnlocked(current, route.requiredTech)) {
       events.emit('DATA_ACQUIRE_REJECTED', { reason: `需要技术：${route.requiredTech}` });
       return;
     }
@@ -58,15 +60,16 @@ export class AcquireDataCommand implements Command {
       return;
     }
 
+    // 预计算技术效果（避免在 state.update 内读取 draft.activeTechEffects）
+    const techEffects = getActiveTechEffects(current);
+    const dataQualityBonus = techEffects
+      .filter((e) => e.type === 'improve_data_quality')
+      .reduce((s, e) => s + e.value, 0);
+    const effectiveQuality = Math.min(1, route.quality + dataQualityBonus);
+
     state.update((draft) => {
       draft.resources['funds'] -= route.cost;
       draft.dataAcquisitionCooldowns[this.routeId] = draft.date;
-
-      // improve_data_quality 技术效果提升获取数据的质量
-      const dataQualityBonus = draft.activeTechEffects
-        .filter((e) => e.type === 'improve_data_quality')
-        .reduce((s, e) => s + e.value, 0);
-      const effectiveQuality = Math.min(1, route.quality + dataQualityBonus);
 
       const ds = draft.datasets.find((d) => d.id === this.targetDatasetId);
       if (ds) {
@@ -116,7 +119,7 @@ export class SynthesizeDataCommand implements Command {
       return;
     }
 
-    if (!current.unlockedTechs.includes('distillation')) {
+    if (!isTechUnlocked(current, 'distillation')) {
       events.emit('DATA_SYNTH_REJECTED', { reason: '需要蒸馏技术' });
       return;
     }
@@ -279,7 +282,7 @@ export class StartDataCollectionCommand implements Command {
     const current = state.read();
 
     // 技术解锁检查
-    if (route.requiredTech && !current.unlockedTechs.includes(route.requiredTech)) {
+    if (route.requiredTech && !isTechUnlocked(current, route.requiredTech)) {
       events.emit('DATA_COLLECTION_REJECTED', { reason: `需要技术：${route.requiredTech}` });
       return;
     }

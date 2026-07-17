@@ -162,6 +162,16 @@ export const INITIAL_RESOURCES: ResourceDefinition[] = [
     initialValue: 0,
     uiConfig: { icon: '\u2696\uFE0F', color: '#a78bfa', showInTopBar: false, format: 'number' },
   },
+  {
+    id: 'staff_manager',
+    name: '管理人员（普通）',
+    category: 'human',
+    isContinuous: false,
+    minValue: 0,
+    maxValue: 50,          // 远小于其他 staff 的 500（高管稀缺）
+    initialValue: 0,
+    uiConfig: { icon: '\u{1F465}', color: '#ffd76b', showInTopBar: false, format: 'number' },
+  },
 ];
 
 /**

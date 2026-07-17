@@ -9,23 +9,29 @@ import {
   StartResearchCommand,
   CancelResearchCommand,
 } from '../../core/commands/TechCommands';
+import { AcceptIdeaCommand, RejectIdeaCommand } from '../../core/commands/IdeaCommands';
+import { AdoptOpenSourceCommand } from '../../core/commands/OpenSourceCommands';
+import { AcquireSmallCompanyCommand } from '../../core/commands/SmallCompanyCommands';
 import {
   SettleLawsuitCommand,
   PublicApologyCommand,
   ConductAuditCommand,
   UseModelInResearchCommand,
 } from '../../core/commands/RiskCommands';
-import { ALL_TECH, TECH_MAP } from '../../core/config/techTree';
+import { ALL_TECH, TECH_MAP, IDEA_TECH_MAP } from '../../core/config/techTree';
 import { CAPABILITY_MAP } from '../../core/config/capabilities';
 import { aggregateExperiments } from '../../core/utils/researchUtils';
 import { StaffRole } from '../../core/entities/Employee';
 import styles from '../styles/App.module.css';
 
-type ResearchTab = 'experiment' | 'tech' | 'risk';
+type ResearchTab = 'experiment' | 'tech' | 'idea' | 'openSource' | 'market' | 'risk';
 
 const RESEARCH_TABS: { key: ResearchTab; label: string; icon: string }[] = [
   { key: 'experiment', label: '实验', icon: '🔬' },
   { key: 'tech', label: '技术树', icon: '🌳' },
+  { key: 'idea', label: '创意', icon: '💡' },
+  { key: 'openSource', label: '开源', icon: '🌐' },
+  { key: 'market', label: '市场', icon: '🏢' },
   { key: 'risk', label: '风险', icon: '⚠️' },
 ];
 
@@ -54,6 +60,15 @@ export function ResearchPanel() {
       <div style={{ display: tab === 'tech' ? 'block' : 'none' }}>
         <TechTab />
       </div>
+      <div style={{ display: tab === 'idea' ? 'block' : 'none' }}>
+        <IdeaTab />
+      </div>
+      <div style={{ display: tab === 'openSource' ? 'block' : 'none' }}>
+        <OpenSourceTab />
+      </div>
+      <div style={{ display: tab === 'market' ? 'block' : 'none' }}>
+        <MarketTab />
+      </div>
       <div style={{ display: tab === 'risk' ? 'block' : 'none' }}>
         <RiskTab />
       </div>
@@ -68,9 +83,16 @@ function ExperimentTab() {
   const researchProjects = useGameState((s) => s.researchProjects);
   const experimentResults = useGameState((s) => s.experimentResults);
   const employees = useGameState((s) => s.employees);
-  const unlockedTechs = useGameState((s) => s.unlockedTechs);
+  const techMaturity = useGameState((s) => s.techMaturity);
 
-  const archTechs = ALL_TECH.filter((t) => t.isArchitecture && t.id !== 'pretraining');
+  // 合并预设架构技术与已获得的独有架构技术（idea/开源/小公司）
+  const uniqueArchTechs = Object.values(IDEA_TECH_MAP).filter(
+    (t) => t.isArchitecture && (techMaturity[t.id] ?? 0) >= 1,
+  );
+  const archTechs = [
+    ...ALL_TECH.filter((t) => t.isArchitecture && t.id !== 'pretraining'),
+    ...uniqueArchTechs,
+  ];
   const researchers = employees.filter((e) => e.role === StaffRole.RESEARCHER && e.status === 'idle');
 
   const [selectedArch, setSelectedArch] = useState<string>(archTechs[0]?.id ?? '');
@@ -118,7 +140,7 @@ function ExperimentTab() {
         >
           {archTechs.map((t) => (
             <option key={t.id} value={t.id}>
-              {t.name}{unlockedTechs.includes(t.id) ? ' (已解锁)' : ''}
+              {t.name}{(techMaturity[t.id] ?? 0) >= 1 ? ' (已解锁)' : ''}
             </option>
           ))}
         </select>
@@ -242,16 +264,33 @@ function ExperimentTab() {
 
 function TechTab() {
   const game = useGame();
-  const unlockedTechs = useGameState((s) => s.unlockedTechs);
+  const techMaturity = useGameState((s) => s.techMaturity);
   const researchingTech = useGameState((s) => s.researchingTech);
   const funds = useGameState((s) => s.resources['funds'] ?? 0);
+  const acceptedIdeaTechs = useGameState((s) => s.acceptedIdeaTechs);
 
   const canResearch = (techId: string): boolean => {
     const tech = TECH_MAP[techId];
     if (!tech || tech.researchDays === 0) return false;
-    if (unlockedTechs.includes(techId)) return false;
+    if ((techMaturity[techId] ?? 0) >= 1) return false;
     if (researchingTech) return false;
-    return tech.prerequisites.every((p) => unlockedTechs.includes(p));
+    return tech.prerequisites.every((p) => (techMaturity[p] ?? 0) >= 1);
+  };
+
+  /** source 标签映射 */
+  const sourceTag = (src: string): string => {
+    if (src === 'idea') return '💡 创意';
+    if (src === 'open_source') return '🌐 开源';
+    if (src === 'small_company') return '🏢 收购';
+    return src;
+  };
+
+  /** maturity 数值展示 */
+  const maturityText = (techId: string): string => {
+    const mat = techMaturity[techId] ?? 0;
+    if (mat >= 100) return '✓ 满级';
+    if (mat >= 1) return `成熟度 ${mat.toFixed(0)}/100 · 效果 ${mat.toFixed(0)}%`;
+    return '';
   };
 
   return (
@@ -285,10 +324,11 @@ function TechTab() {
       </div>
 
       {ALL_TECH.filter((t) => t.researchDays > 0).map((tech) => {
-        const isUnlocked = unlockedTechs.includes(tech.id);
+        const isUnlocked = (techMaturity[tech.id] ?? 0) >= 1;
         const isResearching = researchingTech?.techId === tech.id;
         const canDo = canResearch(tech.id);
-        const prereqMet = tech.prerequisites.every((p) => unlockedTechs.includes(p));
+        const prereqMet = tech.prerequisites.every((p) => (techMaturity[p] ?? 0) >= 1);
+        const matText = maturityText(tech.id);
 
         return (
           <div key={tech.id} className={styles.devRow}>
@@ -302,7 +342,7 @@ function TechTab() {
               {tech.description}
               {' · '}
               {isUnlocked
-                ? '✓ 已解锁'
+                ? (matText || '✓ 已解锁')
                 : !prereqMet
                 ? '前置未满足'
                 : `${tech.researchDays}天 · $${tech.researchCost.toLocaleString()}`}
@@ -319,6 +359,30 @@ function TechTab() {
           </div>
         );
       })}
+
+      {/* 独有技术分区（idea/开源/小公司获得） */}
+      {acceptedIdeaTechs.length > 0 && (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel}>独有技术</span>
+          </div>
+          {acceptedIdeaTechs.map((tech) => {
+            const matText = maturityText(tech.id);
+            return (
+              <div key={tech.id} className={styles.devRow}>
+                <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                  · {tech.name}
+                  {tech.isArchitecture && ' [架构·可实验]'}
+                </span>
+                <span className={styles.devHint} style={{ color: '#5cb85c' }}>
+                  {sourceTag(tech.source)} · {tech.description}
+                  {matText && ` · ${matText}`}
+                </span>
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }
@@ -329,11 +393,11 @@ function RiskTab() {
   const game = useGame();
   const riskState = useGameState((s) => s.riskState);
   const models = useGameState((s) => s.models);
-  const unlockedTechs = useGameState((s) => s.unlockedTechs);
+  const techMaturity = useGameState((s) => s.techMaturity);
   const funds = useGameState((s) => s.resources['funds'] ?? 0);
 
   const settleCost = Math.floor(riskState.legalDebt) * 100_000;
-  const hasAlignment = unlockedTechs.includes('alignment_v1');
+  const hasAlignment = (techMaturity['alignment_v1'] ?? 0) >= 1;
   const strongModels = models.filter((m) => {
     const maxCap = Math.max(...Object.values(m.capabilities));
     return maxCap > 1500;
@@ -468,6 +532,179 @@ function RiskTab() {
             </div>
           ))}
         </>
+      )}
+    </div>
+  );
+}
+
+/* ============== 员工创意 ============== */
+
+function IdeaTab() {
+  const game = useGame();
+  const pendingIdeas = useGameState((s) => s.pendingIdeas);
+  const employees = useGameState((s) => s.employees);
+  const techMaturity = useGameState((s) => s.techMaturity);
+  const researchingTech = useGameState((s) => s.researchingTech);
+
+  const pending = pendingIdeas.filter((i) => i.status === 'pending');
+  const empMap = new Map(employees.map((e) => [e.id, e]));
+
+  return (
+    <div className={styles.tabBody}>
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>员工创意 ({pending.length})</span>
+      </div>
+      <div className={styles.devHint} style={{ paddingLeft: '4px', marginBottom: '6px' }}>
+        研究员每 7 天可能产出创意；接受可加速研发/提升成熟度或解锁独有技术。
+      </div>
+      {pending.length === 0 ? (
+        <div className={styles.devHint} style={{ paddingLeft: '20px' }}>暂无待处理创意</div>
+      ) : (
+        pending.map((idea) => {
+          const emp = empMap.get(idea.sourceEmployeeId);
+          const isResearchingTarget =
+            idea.kind === 'accelerate' && idea.targetTechId === researchingTech?.techId;
+          const mat = techMaturity[idea.targetTechId] ?? 0;
+          return (
+            <div key={idea.id} className={styles.devRow} style={{ flexWrap: 'wrap', gap: '4px' }}>
+              <span className={styles.devRowLabel} style={{ minWidth: 0, flex: '1 1 100%' }}>
+                · {idea.title}
+                {idea.kind === 'unique' ? ' [独有]' : isResearchingTarget ? ' [研发加速]' : ''}
+              </span>
+              <span className={styles.devHint} style={{ flex: '1 1 100%', paddingLeft: '12px' }}>
+                {idea.description}
+              </span>
+              <span className={styles.devHint} style={{ flex: '1 1 100%', paddingLeft: '12px' }}>
+                来源：{emp?.name ?? '未知员工'} · 第{idea.generatedDay}天
+                {idea.kind === 'accelerate' && !isResearchingTarget && mat >= 1
+                  ? ` · 当前成熟度 ${mat.toFixed(0)}`
+                  : ''}
+              </span>
+              <button
+                className={styles.btn}
+                onClick={() => game.executeCommand(new AcceptIdeaCommand(idea.id))}
+              >
+                接受
+              </button>
+              <button
+                className={styles.btn}
+                onClick={() => game.executeCommand(new RejectIdeaCommand(idea.id))}
+              >
+                拒绝
+              </button>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+/* ============== 开源采纳 ============== */
+
+function OpenSourceTab() {
+  const game = useGame();
+  const openSourceOffers = useGameState((s) => s.openSourceOffers);
+  const funds = useGameState((s) => s.resources['funds'] ?? 0);
+  const currentDate = useGameState((s) => s.date);
+
+  const active = openSourceOffers.filter((o) => o.adoptedDay === undefined && currentDate <= o.expiresDay);
+
+  return (
+    <div className={styles.tabBody}>
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>开源要约 ({active.length})</span>
+      </div>
+      <div className={styles.devHint} style={{ paddingLeft: '4px', marginBottom: '6px' }}>
+        开源策略公司（Menta/ShallowFind/Mistral）每 30~60 天发布一项技术；14 天内可付费采纳，初始成熟度 30。
+      </div>
+      {active.length === 0 ? (
+        <div className={styles.devHint} style={{ paddingLeft: '20px' }}>暂无可采纳的开源要约</div>
+      ) : (
+        active.map((offer) => {
+          const remaining = offer.expiresDay - currentDate;
+          const affordable = funds >= offer.adoptionCost;
+          return (
+            <div key={offer.id} className={styles.devRow} style={{ flexWrap: 'wrap', gap: '4px' }}>
+              <span className={styles.devRowLabel} style={{ minWidth: 0, flex: '1 1 100%' }}>
+                · {offer.techName}
+              </span>
+              <span className={styles.devHint} style={{ flex: '1 1 100%', paddingLeft: '12px' }}>
+                {offer.techDescription}
+              </span>
+              <span className={styles.devHint} style={{ flex: '1 1 100%', paddingLeft: '12px' }}>
+                来源：{offer.source} · 成本 ${offer.adoptionCost.toLocaleString()} · 初始成熟度 {offer.initialMaturity} · 剩余 {remaining} 天
+              </span>
+              <button
+                className={styles.btn}
+                style={{ opacity: affordable ? 1 : 0.5 }}
+                disabled={!affordable}
+                onClick={() => game.executeCommand(new AdoptOpenSourceCommand(offer.id))}
+              >
+                采纳
+              </button>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+/* ============== 小公司市场 ============== */
+
+function MarketTab() {
+  const game = useGame();
+  const smallCompanies = useGameState((s) => s.smallCompanies);
+  const funds = useGameState((s) => s.resources['funds'] ?? 0);
+  const currentDate = useGameState((s) => s.date);
+
+  const active = smallCompanies.filter(
+    (c) => !c.acquired && currentDate - c.spawnedDay <= c.lifespan,
+  );
+
+  const techName = (tid: string): string =>
+    TECH_MAP[tid]?.name ?? IDEA_TECH_MAP[tid]?.name ?? tid;
+
+  return (
+    <div className={styles.tabBody}>
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>小公司市场 ({active.length})</span>
+      </div>
+      <div className={styles.devHint} style={{ paddingLeft: '4px', marginBottom: '6px' }}>
+        每 14 天刷新 2~3 家拥有 1~3 项技术的小公司；30 天内可收购，收购后技术初始成熟度 60。
+      </div>
+      {active.length === 0 ? (
+        <div className={styles.devHint} style={{ paddingLeft: '20px' }}>暂无可收购的小公司</div>
+      ) : (
+        active.map((c) => {
+          const remaining = c.lifespan - (currentDate - c.spawnedDay);
+          const affordable = funds >= c.valuation;
+          return (
+            <div key={c.id} className={styles.devRow} style={{ flexWrap: 'wrap', gap: '4px' }}>
+              <span className={styles.devRowLabel} style={{ minWidth: 0, flex: '1 1 100%' }}>
+                · {c.name}
+              </span>
+              <span className={styles.devHint} style={{ flex: '1 1 100%', paddingLeft: '12px' }}>
+                {c.background}
+              </span>
+              <span className={styles.devHint} style={{ flex: '1 1 100%', paddingLeft: '12px' }}>
+                技术：{c.technologies.map(techName).join('、')}
+              </span>
+              <span className={styles.devHint} style={{ flex: '1 1 100%', paddingLeft: '12px' }}>
+                估值 ${c.valuation.toLocaleString()} · 剩余 {remaining} 天
+              </span>
+              <button
+                className={styles.btn}
+                style={{ opacity: affordable ? 1 : 0.5 }}
+                disabled={!affordable}
+                onClick={() => game.executeCommand(new AcquireSmallCompanyCommand(c.id))}
+              >
+                收购
+              </button>
+            </div>
+          );
+        })
       )}
     </div>
   );

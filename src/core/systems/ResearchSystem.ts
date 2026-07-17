@@ -10,7 +10,7 @@ import type { System } from '../interfaces/System';
 import { runExperiment } from '../utils/researchUtils';
 import { generateArchMatrix } from '../config/archEffects';
 import { EXPERIMENT_VALIDATION } from '../config/researchConfig';
-import { getStaffResearchSpeedMultiplier, accumulateResearcherContribution } from '../utils/crossSystemUtils';
+import { getStaffResearchSpeedMultiplier, accumulateResearcherContribution, getActiveTechEffects } from '../utils/crossSystemUtils';
 
 export class ResearchSystem implements System {
   name = 'ResearchSystem';
@@ -18,8 +18,8 @@ export class ResearchSystem implements System {
   update(state: GameState, events: EventBus, deltaDays: number): void {
     const current = state.read();
 
-    // improve_research_speed 技术效果（如 auto_research +50%）
-    const researchSpeedBonus = current.activeTechEffects
+    // improve_research_speed 技术效果（如 auto_research +50%，按 maturity 缩放）
+    const researchSpeedBonus = getActiveTechEffects(current)
       .filter((e) => e.type === 'improve_research_speed')
       .reduce((s, e) => s + e.value, 0);
 
@@ -49,16 +49,27 @@ export class ResearchSystem implements System {
             project.status = 'completed';
             project.completedAt = draft.date;
 
-            // 生成实验结果
+            // 生成实验结果（传入当前 maturity 用于降噪与置信度加成）
             const archMatrix = generateArchMatrix(draft.archMatrixSeed);
+            const archMaturity = draft.techMaturity[project.targetArchId ?? ''] ?? 0;
             const result = runExperiment(
               project.targetArchId ?? '',
               archMatrix,
               project.experimentScale ?? 'small',
+              0,               // confidenceBonus（未来可接 improve_experiment_confidence 技能）
+              archMaturity,
             );
             result.date = draft.date;
             project.experimentResult = result;
             draft.experimentResults.push(result);
+
+            // 实验完成提升对应架构技术成熟度（small +5, medium +12）
+            const archTechId = project.targetArchId ?? '';
+            if (archTechId) {
+              const gain = project.experimentScale === 'medium' ? 12 : 5;
+              const existing = draft.techMaturity[archTechId] ?? 0;
+              draft.techMaturity[archTechId] = Math.min(100, existing + gain);
+            }
 
             // 释放研究员
             for (const empId of project.researcherIds) {

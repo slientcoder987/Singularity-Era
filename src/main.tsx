@@ -9,6 +9,7 @@ import { StaffSystem } from './core/systems/StaffSystem';
 import { TrainingSystem } from './core/systems/TrainingSystem';
 import { InfraMaintenanceSystem } from './core/systems/InfraMaintenanceSystem';
 import { InfrastructureFailureSystem } from './core/systems/InfrastructureFailureSystem';
+import { IdeaGenerationSystem } from './core/systems/IdeaGenerationSystem';
 import { TechResearchSystem } from './core/systems/TechResearchSystem';
 import { ResearchSystem } from './core/systems/ResearchSystem';
 import { RiskSystem } from './core/systems/RiskSystem';
@@ -16,6 +17,7 @@ import { CollectionSystem } from './core/systems/CollectionSystem';
 import { RegionSystem } from './core/systems/RegionSystem';
 import { OperationsSystem } from './core/systems/OperationsSystem';
 import { CompetitorSystem } from './core/systems/CompetitorSystem';
+import { SmallCompanyMarketSystem } from './core/systems/SmallCompanyMarketSystem';
 import { INITIAL_RESOURCES } from './core/config/resources';
 import { createInitialDataset } from './core/config/datasets';
 import { EXTERNAL_CORPS } from './core/entities/Competitor';
@@ -67,7 +69,8 @@ const initialData: GameData = {
   infraEventLog: [],
   // P0 大模型训练机制
   datasets: [createInitialDataset()],
-  unlockedTechs: ['pretraining'],
+  // 技术成熟度：pretraining 初始满级（100），其他技术未解锁（0）
+  techMaturity: { pretraining: 100 },
   researchingTech: null,
   archMatrixSeed: Math.floor(Math.random() * 1e9),
   // P1 研发流程与风险系统
@@ -98,9 +101,20 @@ const initialData: GameData = {
   pendingCandidates: [],
   lastTeamBuildingDay: -999,
   lastPerformanceEvalDay: 0,
+  // 公司管理系统初始值
+  managementMode: 'flat',
+  managementModeChangedDay: -999,
+  executives: { ceoId: null, cooId: null, cfoId: null, ctoId: null },
   // 设计-2：电力成本统一记账初始值
   lastDayPowerCost: 0,
   lastDayPowerCostDate: -1,
+  // 研发系统扩展（技术路线 / 成熟度 / idea / 小公司 / 开源）
+  pendingIdeas: [],
+  smallCompanies: [],
+  openSourceOffers: [],
+  acceptedIdeaTechs: [],
+  lastSmallCompanyRefreshDay: -999,
+  lastOpenSourceDay: {},
 };
 
 // 1. 先创建 registry 并注册资源
@@ -114,6 +128,7 @@ registry.registerAll(INITIAL_RESOURCES);
 const systems = [
   new ComputeHardwareSystem(registry),
   new PowerSystem(registry),
+  new IdeaGenerationSystem(),
   new TechResearchSystem(),
   new ResearchSystem(),
   new CollectionSystem(),
@@ -122,6 +137,7 @@ const systems = [
   new InfraMaintenanceSystem(),
   new OperationsSystem(),
   new CompetitorSystem(),
+  new SmallCompanyMarketSystem(),
   new RiskSystem(),
   new RegionSystem(),
   new StaffSystem(),

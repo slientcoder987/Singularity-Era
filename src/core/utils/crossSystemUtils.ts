@@ -8,7 +8,37 @@ import type { GameData } from '../GameState';
 import type { Employee } from '../entities/Employee';
 import { StaffRole } from '../entities/Employee';
 import type { Department, DepartmentType } from '../entities/Department';
+import type { TechEffect } from '../entities/Infrastructure';
+import { TECH_MAP, IDEA_TECH_MAP } from '../config/techTree';
+import { scaleTechEffect } from './techEffectScale';
 import { calcEmployeeEfficiency, departmentBonus, companyCoordination } from './employeeUtils';
+import {
+  MANAGEMENT_MODES,
+  getCompanyScale,
+  getModeMatchFactor,
+  getExecutiveBonus,
+  getManagerStaffingRatio,
+} from '../config/management';
+
+/**
+ * 员工 id → Employee 索引（memoized）
+ *
+ * 消除 `data.employees.find(e => e.id === id)` 在高频路径下的 O(员工数) 查找。
+ * 缓存 key 为 data.employees 引用，immer 不可变更新保证失效。
+ */
+const employeeMapCache = new WeakMap<object, Map<string, Employee>>();
+
+export function getEmployeeMap(data: GameData): Map<string, Employee> {
+  const list = data.employees as object;
+  let map = employeeMapCache.get(list);
+  if (map !== undefined) return map;
+  map = new Map<string, Employee>();
+  for (const e of data.employees) {
+    map.set(e.id, e);
+  }
+  employeeMapCache.set(list, map);
+  return map;
+}
 
 /** 获取某角色的所有空闲或在职核心员工（排除 training 中） */
 function getActiveStaffByRole(data: GameData, role: StaffRole): Employee[] {
@@ -54,7 +84,8 @@ export function getStaffTrainingSpeedMultiplier(data: GameData, projectId?: stri
   }
   // 递减回报：log(1 + n) / log(11) 使得 10 个满效率研究员 = 1.3x, 而非 1 + 0.15 = 1.15x
   const diminishing = Math.log(1 + researchers.length) / Math.log(11);
-  return 1.0 + totalBonus * diminishing;
+  const mgmtEff = getManagementEfficiency(data);
+  return (1.0 + totalBonus * diminishing) * mgmtEff;
 }
 
 /**
@@ -69,7 +100,8 @@ export function getStaffTrainingStabilityBonus(data: GameData): number {
   if (researchers.length === 0) return 0;
 
   const avgIntelligence = researchers.reduce((s, r) => s + r.attributes.intelligence, 0) / researchers.length;
-  return Math.min(0.5, (avgIntelligence / 100) * 0.003 * researchers.length);
+  const mgmtEff = getManagementEfficiency(data);
+  return Math.min(0.5, (avgIntelligence / 100) * 0.003 * researchers.length) * mgmtEff;
 }
 
 /**
@@ -86,7 +118,8 @@ export function getStaffResearchSpeedMultiplier(data: GameData): number {
     const eff = calcEmployeeEfficiency(r, data.departments, data.employees);
     totalBonus += eff * (r.attributes.creativity / 100) * 0.03;
   }
-  return 1.0 + Math.min(totalBonus, 1.0); // 最高 +100%
+  const mgmtEff = getManagementEfficiency(data);
+  return (1.0 + Math.min(totalBonus, 1.0)) * mgmtEff; // 最高 +100%
 }
 
 /**
@@ -110,7 +143,8 @@ export function getStaffInfraFailureReduction(data: GameData): number {
     const eff = calcEmployeeEfficiency(eng, data.departments, data.employees);
     totalReduction += eff * 0.02;
   }
-  return Math.max(0.3, 1.0 - totalReduction * deptBonus * coordination); // 最低降至 30% 故障率
+  const mgmtEff = getManagementEfficiency(data);
+  return Math.max(0.3, 1.0 - totalReduction * deptBonus * coordination) * mgmtEff; // 最低降至 30% 故障率
 }
 
 /**
@@ -131,7 +165,8 @@ export function getStaffRevenueMultiplier(data: GameData): number {
     const eff = calcEmployeeEfficiency(pm, data.departments, data.employees);
     totalBonus += eff * 0.03;
   }
-  return 1.0 + totalBonus * deptBonus;
+  const mgmtEff = getManagementEfficiency(data);
+  return 1.0 + totalBonus * deptBonus * mgmtEff;
 }
 
 /**
@@ -151,7 +186,8 @@ export function getStaffLegalRiskReductionPerDay(data: GameData): number {
     const eff = calcEmployeeEfficiency(l, data.departments, data.employees);
     total += eff * 0.3;
   }
-  return total * deptBonus;
+  const mgmtEff = getManagementEfficiency(data);
+  return total * deptBonus * mgmtEff;
 }
 
 /**
@@ -177,8 +213,9 @@ export function accumulateResearcherContribution(
   researcherIds: string[],
   contributionPerDay: number,
 ): void {
+  const empMap = getEmployeeMap(data);
   for (const rid of researcherIds) {
-    const emp = data.employees.find((e) => e.id === rid);
+    const emp = empMap.get(rid);
     if (emp) {
       emp.monthlyContribution = (emp.monthlyContribution ?? 0) + contributionPerDay;
     }
@@ -221,8 +258,9 @@ export function getDataEngineerBonus(
     // 数据工程师的 creativity 影响质量（数据清洗/标注能力）
     qualityBonus += (eng.attributes.creativity / 100) * 0.005;
   }
+  const mgmtEff = getManagementEfficiency(data);
   return {
-    speedMultiplier: 1.0 + directBonus + passiveBonus,
+    speedMultiplier: (1.0 + directBonus + passiveBonus) * mgmtEff,
     qualityBonus: Math.min(0.15, qualityBonus),
   };
 }
@@ -340,4 +378,176 @@ export function getCompanyModelCap(data: GameData): number {
  */
 export function getCompanyTeamCoordination(data: GameData): number {
   return Math.min(0.3, getCompanySkillBonus(data, 'team_efficiency'));
+}
+
+// ============================================================
+// 公司管理系统（新增）— 9 个查询函数
+// ============================================================
+
+/**
+ * 计算全公司普通员工总数（6 种 staff_* 资源之和，用于规模判定）
+ *
+ * 用于 getCompanyScale / getManagementEfficiency。
+ */
+export function getTotalNormalHeadcount(data: GameData): number {
+  const staffIds = [
+    'staff_researcher',
+    'staff_data_engineer',
+    'staff_system_engineer',
+    'staff_product_manager',
+    'staff_legal_pr',
+    'staff_manager',
+  ];
+  let total = 0;
+  for (const id of staffIds) {
+    total += data.resources[id] ?? 0;
+  }
+  return total;
+}
+
+/**
+ * 普通管理人员（staff_manager 资源）带来的全员疲劳衰减
+ *
+ * 每人 -0.05/日，封顶 -0.5/日（10 人即达上限）
+ * 代表中层 HR/运营，每人在 StaffSystem 中给所有员工减疲劳。
+ *
+ * 不计入高管任命资格（仅 Core Employee 可任高管）。
+ */
+export function getCompanyFatigueReduction(data: GameData): number {
+  const normalManagers = data.resources['staff_manager'] ?? 0;
+  return Math.min(0.5, normalManagers * 0.05);
+}
+
+/**
+ * CFO 加持下的薪资折扣（0~0.03，乘算）
+ *
+ * StaffSystem.processDailyPayroll 应乘以 (1 - salaryDiscount)。
+ */
+export function getCompanySalaryDiscount(data: GameData): number {
+  return getExecutiveBonus(data).salaryDiscount;
+}
+
+/**
+ * CTO 加持下的研发速度额外加成（0~0.05，乘算）
+ */
+export function getCompanyResearchSpeedBonus(data: GameData): number {
+  return getExecutiveBonus(data).researchSpeedBonus;
+}
+
+/**
+ * CEO 加持下的员工士气下限（0 或 5）
+ *
+ * StaffSystem 士气恢复时应保证 morale 不低于此值。
+ */
+export function getCompanyMoraleFloor(data: GameData): number {
+  return getExecutiveBonus(data).moraleFloor;
+}
+
+/**
+ * COO 加持下的基础设施故障率额外减少（0~0.05，乘算）
+ *
+ * InfrastructureFailureSystem 应在计算故障率时乘以 (1 - reduction)。
+ */
+export function getCompanyInfraFailureReductionBonus(data: GameData): number {
+  return getExecutiveBonus(data).infraFailureReduction;
+}
+
+/**
+ * 管理人员的 talent_development 技能带来的培训速度加成
+ *
+ * StaffTrainingSystem 应乘以 (1 + bonus)。
+ */
+export function getCompanyTrainingSpeedBonus(data: GameData): number {
+  return getCompanySkillBonus(data, 'training_speed');
+}
+
+/**
+ * 管理人员的 cost_optimization 技能带来的薪资额外折扣
+ *
+ * 与 CFO 的 salaryDiscount 累加（但分离查询以避免重复扣减）。
+ */
+export function getCompanyCostOptimization(data: GameData): number {
+  return getCompanySkillBonus(data, 'salary_reduction');
+}
+
+/**
+ * 计算公司管理效率（0.5~1.3）
+ *
+ * 公式：
+ *   finalEff = clamp(
+ *     baseModeEfficiency × managerStaffingRatio × modeMatchFactor
+ *       × (1 + executiveBonus.efficiencyBonus)
+ *       × (1 + getCompanySkillBonus('management_efficiency')),
+ *     0.5, 1.3
+ *   )
+ *
+ * - baseModeEfficiency: 当前模式的基础效率（1.00/1.05/1.10/1.15）
+ * - managerStaffingRatio: 在职核心 manager 数 / 该模式所需 manager 数，封顶 1.0
+ * - modeMatchFactor: 当前模式与实际规模的匹配度（1.00/0.85/0.70/0.55）
+ * - executiveBonus: 4 位高管的累加效率加成（0~0.09）
+ * - skillBonus: executive_vision 技能的累加加成（每个 +2%）
+ *
+ * 微小公司豁免：totalNormalStaff < 5 时直接返回 1.0，
+ * 给开局 5-10 天招聘窗口，避免开局就被惩罚。
+ */
+export function getManagementEfficiency(data: GameData): number {
+  const totalNormalStaff = getTotalNormalHeadcount(data);
+
+  // 微小公司豁免
+  if (totalNormalStaff < 5) return 1.0;
+
+  const mode = data.managementMode;
+  const modeCfg = MANAGEMENT_MODES[mode];
+  const scale = getCompanyScale(totalNormalStaff);
+  const modeMatch = getModeMatchFactor(mode, scale);
+  const staffingRatio = getManagerStaffingRatio(data);
+  const execBonus = getExecutiveBonus(data).efficiencyBonus;
+
+  // executive_vision 技能累积加成
+  const skillBonus = getCompanySkillBonus(data, 'management_efficiency');
+
+  const raw = modeCfg.baseEfficiency
+    * staffingRatio
+    * modeMatch
+    * (1 + execBonus)
+    * (1 + skillBonus);
+
+  return Math.max(0.5, Math.min(1.3, raw));
+}
+
+// ============================================================
+// 技术成熟度系统 — 派生 effect 查询
+// ============================================================
+
+/**
+ * techMaturity 引用 → 缩放后的 TechEffect[] 缓存
+ *
+ * immer 不可变更新保证 data.techMaturity 引用在每次更新后变化，
+ * WeakMap 自动失效旧缓存，无内存泄漏。
+ */
+const activeTechEffectsCache = new WeakMap<object, TechEffect[]>();
+
+/**
+ * 派生当前所有已解锁技术（maturity≥1）的缩放效果列表
+ *
+ * 替代旧 `data.activeTechEffects` 字段（已废弃，仅保留兼容旧存档）。
+ * 所有原读取 `activeTechEffects` 的位置应改为调用此函数。
+ *
+ * 实现：遍历 techMaturity，对每个 maturity≥1 的技术查询节点
+ * （TECH_MAP 或 IDEA_TECH_MAP），按 maturity 缩放 effect。
+ */
+export function getActiveTechEffects(data: GameData): TechEffect[] {
+  const matRef = data.techMaturity as object;
+  const cached = activeTechEffectsCache.get(matRef);
+  if (cached !== undefined) return cached;
+
+  const effects: TechEffect[] = [];
+  for (const [techId, maturity] of Object.entries(data.techMaturity)) {
+    if (maturity < 1) continue;
+    const node = TECH_MAP[techId] ?? IDEA_TECH_MAP[techId];
+    if (!node) continue;
+    effects.push(scaleTechEffect(node.effect, maturity));
+  }
+  activeTechEffectsCache.set(matRef, effects);
+  return effects;
 }

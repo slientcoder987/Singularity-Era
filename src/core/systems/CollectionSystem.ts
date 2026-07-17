@@ -20,6 +20,7 @@ import {
   accumulateResearcherContribution,
   getDataEngineerBonus,
   getCompanyCollectionSpeed,
+  getActiveTechEffects,
 } from '../utils/crossSystemUtils';
 
 export class CollectionSystem implements System {
@@ -29,6 +30,11 @@ export class CollectionSystem implements System {
     const current = state.read();
     const activeProjects = current.dataCollectionProjects.filter((p) => p.status === 'active');
     if (activeProjects.length === 0) return;
+
+    // 预计算技术效果（避免在 state.update 内读取 draft.activeTechEffects）
+    const techDataQualityBonus = getActiveTechEffects(current)
+      .filter((e) => e.type === 'improve_data_quality')
+      .reduce((s, e) => s + e.value, 0);
 
     const completedProjects: Array<{ projectId: string; routeName: string; collected: number }> = [];
 
@@ -75,10 +81,8 @@ export class CollectionSystem implements System {
         }
         draft.resources['funds'] = funds - operatingCost;
 
-        // improve_data_quality 技术效果 + 数据工程师创造力加成 提升收集质量
-        const dataQualityBonus = draft.activeTechEffects
-          .filter((e) => e.type === 'improve_data_quality')
-          .reduce((s, e) => s + e.value, 0) + engBonus.qualityBonus;
+        // improve_data_quality 技术效果（预计算）+ 数据工程师创造力加成 提升收集质量
+        const dataQualityBonus = techDataQualityBonus + engBonus.qualityBonus;
         const effectiveQuality = Math.min(route.qualityCap, project.currentQuality + dataQualityBonus);
 
         // 添加到目标数据集

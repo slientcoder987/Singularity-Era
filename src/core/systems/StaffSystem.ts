@@ -17,6 +17,11 @@ import { STAFF_TRAINING_CONFIG } from '../entities/StaffTrainingProject';
 import { REGIONS } from '../config/regions';
 import { clamp } from '../utils';
 import { salaryCompetitiveness, salaryLoyaltyDelta, resignProbability } from '../utils/employeeUtils';
+import {
+  getCompanyMoraleFloor,
+  getCompanyFatigueReduction,
+  getCompanySalaryDiscount,
+} from '../utils/crossSystemUtils';
 
 /**
  * StaffSystem
@@ -52,8 +57,13 @@ export class StaffSystem implements System {
 
       // 设计-12 修复：士气自然恢复放在所有事件冲击之后（StaffSystem 是最后一个系统），
       // 确保当日 DECEPTION_EXPOSED / VAM_FAILED 等冲击已应用，恢复作用于"最终"士气值。
+      // 公司管理扩展：CEO 任命后员工士气下限 = 5（不跌破此值）
+      const moraleFloor = getCompanyMoraleFloor(draft);
       if (draft.riskState.employeeMorale < 100) {
-        draft.riskState.employeeMorale = Math.min(100, draft.riskState.employeeMorale + 0.1 * deltaDays);
+        draft.riskState.employeeMorale = Math.min(
+          100,
+          Math.max(moraleFloor, draft.riskState.employeeMorale + 0.1 * deltaDays),
+        );
       }
 
       // 获取总部地区用于薪资竞争力计算
@@ -81,7 +91,10 @@ export class StaffSystem implements System {
         } else {
           // —— 疲劳 ——
           if (emp.status === 'assigned') {
-            const fatigueGain = StaffSystem.WORK_FATIGUE_BASE * (100 / Math.max(emp.attributes.stamina, 1)) * deltaDays;
+            // 公司管理扩展：普通 manager 减疲劳积累（HR 关怀、流程优化）
+            const fatigueReduction = getCompanyFatigueReduction(draft);
+            const baseGain = StaffSystem.WORK_FATIGUE_BASE * (100 / Math.max(emp.attributes.stamina, 1)) * deltaDays;
+            const fatigueGain = Math.max(0, baseGain - fatigueReduction * deltaDays);
             emp.fatigue = clamp(emp.fatigue + fatigueGain, 0, 100);
             // 累积工作天数（用于绩效）
             emp.monthlyWorkDays = (emp.monthlyWorkDays ?? 0) + deltaDays;
@@ -143,6 +156,16 @@ export class StaffSystem implements System {
       }
 
       draft.employees = survivors;
+
+      // 公司管理扩展：离职清理高管槽位
+      const resignedIds = new Set(resignList.map((r) => r.id));
+      if (resignedIds.size > 0) {
+        const exec = draft.executives;
+        if (exec.ceoId && resignedIds.has(exec.ceoId)) exec.ceoId = null;
+        if (exec.cooId && resignedIds.has(exec.cooId)) exec.cooId = null;
+        if (exec.cfoId && resignedIds.has(exec.cfoId)) exec.cfoId = null;
+        if (exec.ctoId && resignedIds.has(exec.ctoId)) exec.ctoId = null;
+      }
     });
 
     // 2. 发射事件
@@ -197,11 +220,13 @@ export class StaffSystem implements System {
     }
   }
 
-  /** 每日扣薪（设计 #4：按日累计精确计算，不再按周期一次性扣） */
+  /** 每日扣薪（设计 #4：按日累计精确计算，不再按周期一次性扣）
+   *  公司管理扩展：CFO 任命后全员薪资支出 -3%（乘算） */
   private processDailyPayroll(state: GameState, events: EventBus, deltaDays: number, today: number): void {
     const current = state.read();
+    const salaryDiscount = getCompanySalaryDiscount(current); // 0~0.03（CFO）
     const dailyTotal = current.employees.reduce((sum, e) => sum + e.salary / 365, 0);
-    const totalSalary = dailyTotal * deltaDays;
+    const totalSalary = dailyTotal * deltaDays * (1 - salaryDiscount);
 
     if (totalSalary > 0) {
       state.update((draft) => {
@@ -287,6 +312,12 @@ export class StaffSystem implements System {
     if (Math.random() < successChance) {
       state.update((draft) => {
         draft.employees = draft.employees.filter((e) => e.id !== empId);
+        // 公司管理扩展：挖角清理高管槽位
+        const exec = draft.executives;
+        if (exec.ceoId === empId) exec.ceoId = null;
+        if (exec.cooId === empId) exec.cooId = null;
+        if (exec.cfoId === empId) exec.cfoId = null;
+        if (exec.ctoId === empId) exec.ctoId = null;
       });
       events.emit('EMPLOYEE_POACHED', empId, offerSalary);
       return true;

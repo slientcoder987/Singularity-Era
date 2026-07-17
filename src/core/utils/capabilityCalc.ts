@@ -153,6 +153,9 @@ function collectCapabilityBonuses(effects: TechEffect[]): Partial<Record<Capabil
  *
  * 流程：baseScore → 上下文影响 → 数据质量 → 架构加成 → 技术加成 → 涌现惩罚
  *
+ * @param techIds  本次训练选用的技术 id 列表（来自 project.techIds，非全局已解锁列表）
+ *                 PR2 将扩展为按 techMaturity 缩放 archMatrix 加成
+ *
  * 返回 { capabilities（涌现惩罚后）, rawCapabilities（涌现惩罚前，用于UI判断涌现） }
  */
 export function calculateCapabilities(
@@ -160,7 +163,7 @@ export function calculateCapabilities(
   contextLength: number,
   dataset: Dataset,
   archMatrix: Record<string, Partial<Record<CapabilityId, number>>>,
-  unlockedTechs: string[],
+  techIds: string[],
   techEffects: TechEffect[],
 ): { capabilities: CapabilityVector; rawCapabilities: CapabilityVector } {
   const capabilities = {} as CapabilityVector;
@@ -176,7 +179,7 @@ export function calculateCapabilities(
 
     // 3. 架构加成
     let archBonus = 1.0;
-    for (const techId of unlockedTechs) {
+    for (const techId of techIds) {
       const archEntry = archMatrix[techId];
       if (archEntry && archEntry[def.id]) {
         archBonus += archEntry[def.id]!;
