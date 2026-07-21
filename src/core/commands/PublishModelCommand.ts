@@ -5,7 +5,7 @@
  *
  * 发布后：
  * - model.published = true
- * - model.daysSincePublished = 0（开始累积社区反馈）
+ * - model.publishedAt = today（首次发布；重新发布不重置，见 I2 修复）
  * - 该模型才被 OperationsSystem 计入市场收入和 Token 收入
  *
  * 未发布的模型仍可用于内部研究（usedInResearch），但不产生市场收入。
@@ -44,7 +44,12 @@ export class PublishModelCommand implements Command {
       const m = draft.models.find((x) => x.id === this.modelId);
       if (!m) return;
       m.published = true;
-      m.daysSincePublished = 0;
+      // ★ I2 修复：用 publishedAt 替代 daysSincePublished，避免每日 ++ 写入
+      //   首次发布设置 publishedAt = today；重新发布（unpublish → publish）不重置
+      //   （与 UnpublishModelCommand 注释一致："daysSincePublished 保留"）
+      if (m.publishedAt === undefined || m.publishedAt < 0) {
+        m.publishedAt = draft.date;
+      }
     });
 
     events.emit('MODEL_PUBLISHED', this.modelId, model.name, model.baseScore);

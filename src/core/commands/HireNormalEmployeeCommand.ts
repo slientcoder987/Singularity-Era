@@ -47,12 +47,10 @@ export class HireNormalEmployeeCommand implements Command {
       return;
     }
 
-    // 扣费 + 增加普通员工资源数量
-    state.addResource('funds', -hireCost);
-    state.addResource(staffResourceId, 1);
-
-    // 自动加入对应部门
+    // ★ P1-8 修复：合并到单次 state.update，避免两次 addResource 触发两次重渲染
     state.update((draft) => {
+      draft.resources['funds'] = Math.max(0, (draft.resources['funds'] ?? 0) - hireCost);
+      draft.resources[staffResourceId] = (draft.resources[staffResourceId] ?? 0) + 1;
       const dept = draft.departments.find(
         (d) => DEPARTMENT_ROLE_MAP[d.type] === this.role,
       );
@@ -67,6 +65,80 @@ export class HireNormalEmployeeCommand implements Command {
       staffResourceId,
       count: newCount,
       cost: hireCost,
+    });
+  }
+}
+
+/**
+ * HireNormalEmployeesBatchCommand
+ *
+ * 批量招普通员工（★ P1-8：性能优化）
+ * 之前循环执行 N 次 HireNormalEmployeeCommand 触发 N 次 immer produce + N 次 UI 重渲染
+ * 现在单次 state.update 完成 N 个人的招聘，并按增量费率合计费用。
+ *
+ * 资金不足时按可招数量招满（不发 REJECTED，避免一次失败 N 个）。
+ */
+export class HireNormalEmployeesBatchCommand implements Command {
+  constructor(
+    public readonly role: StaffRole,
+    public readonly count: number,
+  ) {}
+
+  execute(state: GameState, events: EventBus): void {
+    const roleCfg = ROLE_CONFIG[this.role];
+    if (!roleCfg) {
+      events.emit('HIRE_REJECTED', { role: this.role, reason: '未知角色' });
+      return;
+    }
+    const staffResourceId = ROLE_TO_STAFF_RESOURCE[this.role];
+    if (!staffResourceId) {
+      events.emit('HIRE_REJECTED', { role: this.role, reason: '无对应普通员工资源' });
+      return;
+    }
+    if (this.count <= 0) return;
+
+    const current = state.read();
+    const startCount = current.resources[staffResourceId] ?? 0;
+    const funds = current.resources['funds'] ?? 0;
+
+    // 计算按递增费率的总费用，并按当前资金裁剪
+    let totalCost = 0;
+    let actualHire = 0;
+    for (let i = 0; i < this.count; i++) {
+      const cost = calcNormalHireCost(startCount + i);
+      if (funds - totalCost < cost) break;
+      totalCost += cost;
+      actualHire += 1;
+    }
+    if (actualHire === 0) {
+      events.emit('HIRE_REJECTED', {
+        role: this.role,
+        reason: '资金不足',
+        cost: calcNormalHireCost(startCount),
+        funds,
+      });
+      return;
+    }
+
+    state.update((draft) => {
+      draft.resources['funds'] = Math.max(0, (draft.resources['funds'] ?? 0) - totalCost);
+      draft.resources[staffResourceId] = (draft.resources[staffResourceId] ?? 0) + actualHire;
+      const dept = draft.departments.find(
+        (d) => DEPARTMENT_ROLE_MAP[d.type] === this.role,
+      );
+      if (dept) {
+        dept.normalHeadcount += actualHire;
+      }
+    });
+
+    events.emit('NORMAL_EMPLOYEE_HIRED', {
+      role: this.role,
+      staffResourceId,
+      count: state.getResource(staffResourceId),
+      cost: totalCost,
+      batched: true,
+      requested: this.count,
+      hired: actualHire,
     });
   }
 }

@@ -22,6 +22,7 @@ import {
   getCompanyCollectionSpeed,
   getActiveTechEffects,
 } from '../utils/crossSystemUtils';
+import { aggregateMultiplicative, TECH_EFFECT_CAPS } from '../utils/techEffectScale';
 
 export class CollectionSystem implements System {
   name = 'CollectionSystem';
@@ -32,9 +33,12 @@ export class CollectionSystem implements System {
     if (activeProjects.length === 0) return;
 
     // 预计算技术效果（避免在 state.update 内读取 draft.activeTechEffects）
-    const techDataQualityBonus = getActiveTechEffects(current)
-      .filter((e) => e.type === 'improve_data_quality')
-      .reduce((s, e) => s + e.value, 0);
+    // ★ PR-A 修复：improve_data_quality 改用乘法叠加 + 硬性上限 +50%
+    const techDataQualityBonus = aggregateMultiplicative(
+      getActiveTechEffects(current),
+      'improve_data_quality',
+      TECH_EFFECT_CAPS.improve_data_quality,
+    );
 
     const completedProjects: Array<{ projectId: string; routeName: string; collected: number }> = [];
 

@@ -32,21 +32,21 @@ export class RegionSystem implements System {
     const modifiers = getRegionModifiers(current.headquartersRegionId);
 
     // ★ Bug #9：每日税率扣除（从运营收入中提取，税率越高实际到手越少）
-    // 此效果在 OperationsSystem 中已通过 marketCalc 估值溢价体现；
-    // 这里额外处理利润部分的税率：如果日收入超过电力成本，差额部分缴税
-    if (current.operations && current.operations.dailyRevenue > 0) {
-      const ops = current.operations;
-      // 设计-2 修复：直接读取 PowerSystem / InfraMaintenanceSystem 当日实扣的电力成本，
-      // 避免重新估算与实际扣费不一致导致税基偏差（消除电力成本双重估算）。
-      // 若 lastDayPowerCostDate 不是今日（例如系统未运行），回退到 0。
-      const estimatedPowerCost =
-        current.lastDayPowerCostDate === current.date ? current.lastDayPowerCost : 0;
+      // 此效果在 OperationsSystem 中已通过 marketCalc 估值溢价体现；
+      // 这里额外处理利润部分的税率：如果日收入超过运营成本，差额部分缴税
+      if (current.operations && current.operations.dailyRevenue > 0) {
+        const ops = current.operations;
+        // 设计-2 修复：直接读取 PowerSystem / InfraMaintenanceSystem 当日实扣的电力成本，
+        // 避免重新估算与实际扣费不一致导致税基偏差（消除电力成本双重估算）。
+        // 若 lastDayPowerCostDate 不是今日（例如系统未运行），回退到 0。
+        const estimatedPowerCost =
+          current.lastDayPowerCostDate === current.date ? current.lastDayPowerCost : 0;
 
-      // 仅对超出运营成本的利润收税
-      const totalNonPowerCost =
-        current.serverNodes.reduce((s, n) => s + n.maintenanceCost, 0) +
-        current.clusters.reduce((s, c) => s + c.operationalCostPerDay + c.storageCostPerDay, 0) +
-        current.dataCenters.reduce((s, dc) => s + dc.maintenanceCostPerDay, 0);
+        // ★ R1 修复：原代码重复遍历 serverNodes + clusters + dataCenters 计算维护成本，
+        //   与 InfraMaintenanceSystem 完全重复。改为读取 InfraMaintenanceSystem 写入的
+        //   lastDayInfraCost 派生字段，O(1) 读取替代 O(N) 遍历。
+        const totalNonPowerCost =
+          current.lastDayInfraCostDate === current.date ? current.lastDayInfraCost : 0;
 
       // 设计-7 修复：Token 收入也纳入利润税基，避免通过 Token 售卖规避全部利润税
       const totalDailyRevenue = ops.dailyRevenue + (ops.tokenRevenue ?? 0);

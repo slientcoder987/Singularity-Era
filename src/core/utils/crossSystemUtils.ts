@@ -273,8 +273,26 @@ export function getDataEngineerBonus(
  *   trainingCost *= 1 - bonus;
  *
  * 性能：O(n)，n=员工数，每日调用一次可接受
+ *
+ * ★ T7 修复：原每次调用都全量扫 employees × skills，6 个 wrapper 每日调用 6 次。
+ *   改为 WeakMap 缓存 data.employees 引用 → Map<effectType, bonus>。
+ *   employees 引用变化时（StaffSystem 修改后）缓存自动失效。
+ *   同一 employees 引用下，不同 effectType 只扫一次。
  */
+const skillBonusCache = new WeakMap<object, Map<string, number>>();
+const skillMaxCache = new WeakMap<object, Map<string, number>>();
+
 export function getCompanySkillBonus(data: GameData, effectType: string): number {
+  const empRef = data.employees as object;
+  let typeMap = skillBonusCache.get(empRef);
+  if (typeMap === undefined) {
+    typeMap = new Map<string, number>();
+    skillBonusCache.set(empRef, typeMap);
+  } else {
+    const cached = typeMap.get(effectType);
+    if (cached !== undefined) return cached;
+  }
+
   let total = 0;
   for (const emp of data.employees) {
     if (emp.status === 'training') continue;
@@ -284,13 +302,26 @@ export function getCompanySkillBonus(data: GameData, effectType: string): number
       }
     }
   }
+  typeMap.set(effectType, total);
   return total;
 }
 
 /**
  * 收集所有员工解锁技能的最大值（用于"团队协调"等"取最大"型技能）
+ *
+ * ★ T7 修复：同 getCompanySkillBonus，加 WeakMap 缓存。
  */
 export function getCompanySkillMax(data: GameData, effectType: string): number {
+  const empRef = data.employees as object;
+  let typeMap = skillMaxCache.get(empRef);
+  if (typeMap === undefined) {
+    typeMap = new Map<string, number>();
+    skillMaxCache.set(empRef, typeMap);
+  } else {
+    const cached = typeMap.get(effectType);
+    if (cached !== undefined) return cached;
+  }
+
   let max = 0;
   for (const emp of data.employees) {
     if (emp.status === 'training') continue;
@@ -300,6 +331,7 @@ export function getCompanySkillMax(data: GameData, effectType: string): number {
       }
     }
   }
+  typeMap.set(effectType, max);
   return max;
 }
 

@@ -1,53 +1,94 @@
 import type { Command } from '../interfaces/Command';
 import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
-import { IDEA_TECH_MAP } from '../config/techTree';
-import { IDEA_TECH_POOL } from '../config/ideaTechPool';
+import type { Employee } from '../entities/Employee';
+import { canAcceptUniqueTechs, getMaxUniqueTechSlots, getUniqueTechCount } from '../utils/uniqueTechSlots';
 
-/** 接受员工 idea */
+/**
+ * 计算 idea 验证的成功概率
+ *
+ * 公式：P = clamp(0.30 + (intelligence - 50) × 0.004 + (creativity - 50) × 0.005 + level × 0.02, 0.30, 0.85)
+ *
+ * 基准 30%，高属性研究员可提升至 85%。
+ * 示例：L5 int=75 cre=70 → P = 0.30 + 0.10 + 0.10 + 0.10 = 0.60
+ */
+function calcSuccessProbability(emp: Employee): number {
+  const raw = 0.30
+    + (emp.attributes.intelligence - 50) * 0.004
+    + (emp.attributes.creativity - 50) * 0.005
+    + emp.level * 0.02;
+  return Math.max(0.30, Math.min(0.85, raw));
+}
+
+/** 启动 idea 验证（替代原即时接受） */
 export class AcceptIdeaCommand implements Command {
   constructor(private readonly ideaId: string) {}
 
   execute(state: GameState, events: EventBus): void {
     const current = state.read();
     const idea = current.pendingIdeas.find((i) => i.id === this.ideaId);
-    if (!idea) {
-      events.emit('IDEA_REJECTED', { reason: 'idea 不存在' });
+    if (!idea || idea.status !== 'pending') {
+      events.emit('IDEA_REJECTED', { reason: idea ? 'idea 已处理' : 'idea 不存在' });
       return;
     }
-    if (idea.status !== 'pending') {
-      events.emit('IDEA_REJECTED', { reason: 'idea 已处理' });
+
+    const emp = current.employees.find((e) => e.id === idea.sourceEmployeeId);
+    if (!emp) {
+      events.emit('IDEA_REJECTED', { reason: '提出者已离职' });
+      return;
+    }
+
+    // PR-E：独有技术槽位检查（仅 unique idea 占用槽位，accelerate 不占用）
+    if (idea.kind === 'unique' && !canAcceptUniqueTechs(current, 1)) {
+      const used = getUniqueTechCount(current);
+      const max = getMaxUniqueTechSlots(current);
+      events.emit('IDEA_REJECTED', {
+        reason: `独有技术槽位已满 (${used}/${max})，需先提升公司规模或研究员数量`,
+      });
+      return;
+    }
+
+    // 计算成功概率（基于提出者属性）
+    const successProb = calcSuccessProbability(emp);
+
+    // 计算验证天数：unique 更复杂需更长时间
+    // accelerate: 3 + (1-P) × 7 → 3.45~7.9 天
+    // unique:     5 + (1-P) × 12 → 5.6~13.4 天
+    const baseDays = idea.kind === 'unique' ? 5 : 3;
+    const uncertaintyDays = idea.kind === 'unique' ? 12 : 7;
+    const totalDays = Math.round(baseDays + (1 - successProb) * uncertaintyDays);
+
+    // 每日验证成本：$2000（accelerate）/ $3500（unique）
+    const dailyCost = idea.kind === 'unique' ? 3500 : 2000;
+
+    // 首日成本
+    const funds = current.resources['funds'] ?? 0;
+    if (funds < dailyCost) {
+      events.emit('IDEA_REJECTED', { reason: `资金不足（需要 $${dailyCost}/天）` });
       return;
     }
 
     state.update((draft) => {
       const target = draft.pendingIdeas.find((i) => i.id === this.ideaId);
       if (!target) return;
-      target.status = 'accepted';
 
-      if (idea.kind === 'accelerate') {
-        if (idea.targetTechId === draft.researchingTech?.techId) {
-          // 研发中技术：进度 +20% totalDays
-          draft.researchingTech.progressDays += draft.researchingTech.totalDays * idea.value;
-        } else {
-          // 已解锁技术：maturity += value
-          const existing = draft.techMaturity[idea.targetTechId] ?? 0;
-          draft.techMaturity[idea.targetTechId] = Math.min(100, existing + idea.value);
-        }
-      } else {
-        // unique：注册独有技术到 IDEA_TECH_MAP + 持久化
-        const poolNode = IDEA_TECH_POOL.find((t) => t.id === idea.targetTechId);
-        if (poolNode && !IDEA_TECH_MAP[poolNode.id]) {
-          IDEA_TECH_MAP[poolNode.id] = poolNode;
-          draft.acceptedIdeaTechs.push(poolNode);
-        }
-        // 应用初始 maturity（取较大值，避免重复接受降级）
-        const existing = draft.techMaturity[idea.targetTechId] ?? 0;
-        draft.techMaturity[idea.targetTechId] = Math.max(existing, idea.value);
-      }
+      target.status = 'verifying';
+      target.verificationDays = 1;
+      target.verificationTotalDays = totalDays;
+      target.verificationDailyCost = dailyCost;
+      target.successProbability = successProb;
+
+      // 扣除首日成本
+      draft.resources['funds'] = (draft.resources['funds'] ?? 0) - dailyCost;
     });
 
-    events.emit('IDEA_ACCEPTED', idea);
+    events.emit('IDEA_VERIFICATION_STARTED', {
+      ideaId: idea.id,
+      title: idea.title,
+      totalDays,
+      dailyCost,
+      successProbability: successProb,
+    });
   }
 }
 

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { formatGameDate, formatResourceValue } from '../../core/utils';
@@ -16,8 +17,9 @@ export function TopBar() {
   const game = useGame();
   const date = useGameState((s) => s.date);
   const startDate = useGameState((s) => s.startDate);
-  const resources = useGameState((s) => s.resources);
-  const coreEmployees = useGameState((s) => s.employees);
+  // ★ 性能优化：只订阅 .length，避免员工任意属性变化（fatigue/loyalty/experience）
+  //   都触发 TopBar 重渲染。原订阅整个 employees 数组引用。
+  const coreEmployeeCount = useGameState((s) => s.employees.length);
   const headquartersRegionId = useGameState((s) => s.headquartersRegionId);
   const hqRegion = headquartersRegionId ? REGION_MAP[headquartersRegionId] : null;
 
@@ -27,10 +29,35 @@ export function TopBar() {
   // 设计-8：云算力独立显示，让玩家直观感知租赁状态
   const cloudComputePower = useGameState((s) => getActiveCloudTFLOPS(s));
 
-  // 计算员工总数：核心员工 + 普通员工（human 类别资源之和）
   const humanResources = game.registry.getByCategory('human');
+
+  // ★ U7 修复：原订阅整个 s.resources 对象，任何资源变动（如购买卡、扣电费、
+  //   数据处理等）都触发 TopBar 重渲染。改为订阅派生字符串，仅在 TopBar 实际
+  //   显示的资源值（topBarResources + humanResources）变化时才重渲染。
+  const neededIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const def of topBarResources) ids.push(def.id);
+    for (const def of humanResources) ids.push(def.id);
+    return ids;
+  }, [topBarResources, humanResources]);
+
+  const resourceKey = useGameState((s) => {
+    let key = '';
+    for (const id of neededIds) key += (s.resources[id] ?? 0) + '|';
+    return key;
+  });
+
+  // 重渲染由 resourceKey 变化触发，此处直接读取最新资源值
+  // useMemo 确保 resourceKey 未变时返回同一引用，避免子组件不必要的重渲染
+  const resources = useMemo(
+    () => game.state.read().resources,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [resourceKey, game],
+  );
+
+  // 计算员工总数：核心员工 + 普通员工（human 类别资源之和）
   const normalEmployeeCount = humanResources.reduce((sum, def) => sum + (resources[def.id] ?? 0), 0);
-  const totalEmployees = coreEmployees.length + normalEmployeeCount;
+  const totalEmployees = coreEmployeeCount + normalEmployeeCount;
 
   return (
     <header className={styles.topBar}>

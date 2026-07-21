@@ -4,7 +4,8 @@
  * 由 open_source 策略的竞争对手（Menta / Mistral / ShallowFind）触发。
  * 每 30~60 天开源一次，玩家有 14 天窗口期采纳。
  *
- * 采纳成本 $50k~$200k，初始 maturity=30（比研发完成的 50 低，需本地化适配）。
+ * PR-D：初始成熟度随机 20~40（开源代码需本地化适配，所以初始较低但比创意 idea 高）。
+ * 采纳成本 $50k~$200k。
  */
 export interface OpenSourceOffer {
   id: string;
@@ -20,7 +21,7 @@ export interface OpenSourceOffer {
   publishedDay: number;
   /** 采纳成本（美元） */
   adoptionCost: number;
-  /** 初始成熟度（通常 30） */
+  /** 初始成熟度（PR-D：随机 20~40） */
   initialMaturity: number;
   /** 过期日期（publishedDay + 14） */
   expiresDay: number;

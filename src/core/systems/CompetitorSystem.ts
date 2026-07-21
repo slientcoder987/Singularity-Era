@@ -95,15 +95,9 @@ export class CompetitorSystem implements System {
 
       // BUG-12 修复：初始化后立即写回，但不 return——
       // 继续执行同日首次模拟，避免在非 tick 日初始化时竞争对手停滞到下一个 tick。
+      // ★ I3 修复：competitors 是上方新创建的对象，直接赋值即可，无需深拷贝。
       state.update((draft) => {
-        draft.competitorStates = competitors.map((c) => ({
-          ...c,
-          capabilities: { ...c.capabilities },
-          operatingRegions: [...c.operatingRegions],
-          regionQualityMultiplier: { ...c.regionQualityMultiplier },
-          releasedModels: c.releasedModels.map((m) => ({ ...m })),
-          intel: c.intel.map((i) => ({ ...i })),
-        }));
+        draft.competitorStates = competitors;
       });
       updateCompetitorStates(competitors);
 
@@ -112,6 +106,7 @@ export class CompetitorSystem implements System {
       if (current.date % COMPETITOR_TICK_DAYS !== 0) return;
       // 若初始化日恰好是 tick 日，继续往下执行模拟
       current = state.read();
+      // ★ I3 修复：深拷贝仍需（current 是只读快照，simulateCompetitor 会修改 comp）
       competitors = current.competitorStates.map((c) => ({
         ...c,
         capabilities: { ...c.capabilities },
@@ -245,16 +240,11 @@ export class CompetitorSystem implements System {
       events.emit('COMPETITOR_BANKRUPT', comp.name, current.date);
     }
 
-    // 写回 state（已深拷贝，安全；破产的竞争对手不写回，等同于退出市场）
+    // 写回 state
+    // ★ I3 修复：survivors 已经是上方深拷贝的工作集（已修改），直接赋值即可。
+    //   原代码再次深拷贝是多余的——survivors 中的对象不与 current 共享引用。
     state.update((draft) => {
-      draft.competitorStates = survivors.map((c) => ({
-        ...c,
-        capabilities: { ...c.capabilities },
-        operatingRegions: [...c.operatingRegions],
-        regionQualityMultiplier: { ...c.regionQualityMultiplier },
-        releasedModels: c.releasedModels.map((m) => ({ ...m })),
-        intel: c.intel.map((i) => ({ ...i })),
-      }));
+      draft.competitorStates = survivors;
     });
 
     // 同步到 marketCalc 缓存
@@ -299,6 +289,8 @@ export class CompetitorSystem implements System {
       if (!techId) continue;
 
       const adoptionCost = Math.round(50_000 + Math.random() * 150_000); // $50k~$200k
+      // PR-D：开源初始成熟度随机 20~40（开源代码需本地化适配，所以低于自研但高于创意 idea）
+      const initialMaturity = 20 + Math.floor(Math.random() * 21); // 20~40
       const offer: OpenSourceOffer = {
         id: genId(`offer-${comp.id}-${current.date}`),
         techId,
@@ -307,7 +299,7 @@ export class CompetitorSystem implements System {
         source: comp.name,
         publishedDay: current.date,
         adoptionCost,
-        initialMaturity: 30,
+        initialMaturity,
         expiresDay: current.date + 14,
       };
       openSourceEvents.push({ compName: comp.name, offer });
@@ -403,6 +395,13 @@ export class CompetitorSystem implements System {
         baseScore: newScore,
         day,
       });
+      // ★ U3 修复：releasedModels 无界增长配合 I3 每 7 天深拷贝放大开销。
+      //   保留最近 100 条（约 3000 天游戏时长才触发截断）。
+      //   正常游戏不会触发，仅作为兜底保护避免极端存档膨胀。
+      //   modelName 用 length+1 命名，截断会破坏唯一性，故阈值设较高。
+      if (comp.releasedModels.length > 100) {
+        comp.releasedModels = comp.releasedModels.slice(-100);
+      }
       comp.trainingProgress = 0;
       comp.releasedLastMonth = true;
 

@@ -1,8 +1,48 @@
 import type { ComputeCardSpec } from '../entities/ComputeCard';
 import type { Cluster, DataCenter, TechEffect } from '../entities/Infrastructure';
 import type { ParallelConfig } from '../entities/TrainingProject';
+import type { GameData } from '../GameState';
 import { getCoolingType } from '../config/infrastructure';
+import { getCardSpec } from '../config/computeCards';
 import { clamp } from '../utils';
+import { aggregateMultiplicative, TECH_EFFECT_CAPS } from './techEffectScale';
+
+/**
+ * 计算集群所有 online 卡的理论总算力（TFLOPS）
+ *
+ * PR-B：实验系统使用此函数确定每日可消耗的算力上限。
+ * 实验每日占用 = clusterTotalTflops × computeRatio。
+ *
+ * 注意：此函数返回的是理论总算力（不含利用率折损），
+ * 与 calculateEffectiveCompute 返回的 effectiveTflops 不同。
+ * 实验占用的是"理论总算力的比例"，而非有效算力的比例，
+ * 这样实验进度不受训练阶段利用率波动影响，玩家可预期。
+ */
+export function calcClusterTotalTflops(data: GameData): number {
+  let total = 0;
+  for (const modelId of Object.keys(data.resourceMeta)) {
+    const pool = data.resourceMeta[modelId];
+    if (!pool) continue;
+    const spec = getCardSpec(modelId);
+    if (!spec) continue;
+    if (Array.isArray(pool)) {
+      // 旧版扁平数组
+      for (const card of pool) {
+        if (card.status === 'online') {
+          total += spec.tflopsPerCard;
+        }
+      }
+    } else if (Array.isArray((pool as any).aggregates)) {
+      // 新版聚合池：按桶 count 累加 online 卡数
+      for (const agg of (pool as any).aggregates) {
+        if (agg.status === 'online') {
+          total += agg.count * spec.tflopsPerCard;
+        }
+      }
+    }
+  }
+  return total;
+}
 
 /**
  * 利用率计算结果
@@ -90,9 +130,13 @@ function calcInterconnectPenalty(
   if (!requiresParallel || cardSpecs.length === 0) return 0;
 
   const requiredBW = parallelSize * 50;
-  const actualBW = Math.min(
-    ...cardSpecs.map((s) => (s.nvlinkBandwidth > 0 ? s.nvlinkBandwidth : s.memoryBandwidth / 4)),
-  );
+  // ★ 修复：Math.min(...spread) 在 10万元素时爆栈，改用循环
+  let actualBW = Infinity;
+  for (const s of cardSpecs) {
+    const bw = s.nvlinkBandwidth > 0 ? s.nvlinkBandwidth : s.memoryBandwidth / 4;
+    if (bw < actualBW) actualBW = bw;
+  }
+  if (actualBW === Infinity) actualBW = 0;
 
   if (actualBW <= 0) return 0.30;
 
@@ -145,11 +189,23 @@ function calcCrossNodePenalty(
 
 /**
  * 计算规模惩罚（阿姆达尔定律在分布式训练中的应用）
+ *
+ * 超大规模集群（3D-Torus/光互联）使用更平缓的惩罚曲线，
+ * 反映先进拓扑对通信开销的缓解。
  */
-function calcScalePenalty(totalGpus: number): number {
+function calcScalePenalty(totalGpus: number, topology?: string): number {
   if (totalGpus <= 8) return 1.0;
   if (totalGpus <= 64) return Math.max(1 - Math.log(totalGpus / 8) * 0.02, 0.70);
   if (totalGpus <= 512) return Math.max(1 - Math.log(totalGpus / 64) * 0.04, 0.70);
+
+  // 超大规模：拓扑相关惩罚
+  const isAdvanced = topology === '3d_torus' || topology === 'optical_mesh' || topology === 'hybrid_fabric';
+  if (isAdvanced) {
+    // 先进拓扑：512→32768 卡惩罚 0.70→0.55，32768→1M 卡惩罚 0.55→0.45
+    if (totalGpus <= 32768) return Math.max(1 - Math.log(totalGpus / 512) * 0.03, 0.55);
+    return Math.max(1 - Math.log(totalGpus / 32768) * 0.02, 0.45);
+  }
+  // 传统拓扑：保持原惩罚曲线
   return Math.max(1 - Math.log(totalGpus / 512) * 0.06, 0.70);
 }
 
@@ -162,9 +218,14 @@ function calcHomogeneityFactor(cardSpecs: ComputeCardSpec[]): number {
   const resourceIds = new Set(cardSpecs.map((s) => s.resourceId));
   if (resourceIds.size === 1) return 1.0;
 
-  const powers = cardSpecs.map((s) => s.maxPowerDrawKW);
-  const minPower = Math.min(...powers);
-  const maxPower = Math.max(...powers);
+  // ★ 修复：Math.min/max(...spread) 在 10万元素时爆栈，改用循环
+  let minPower = Infinity;
+  let maxPower = -Infinity;
+  for (const s of cardSpecs) {
+    if (s.maxPowerDrawKW < minPower) minPower = s.maxPowerDrawKW;
+    if (s.maxPowerDrawKW > maxPower) maxPower = s.maxPowerDrawKW;
+  }
+  if (minPower === Infinity || maxPower === -Infinity) return 1.0;
   const ratio = minPower / maxPower;
 
   if (ratio >= 0.8) return 0.98;
@@ -219,12 +280,14 @@ function calcPPEfficiency(ppStages: number): number {
  */
 function calcTPEfficiency(tpSize: number, cardSpecs: ComputeCardSpec[]): number {
   if (tpSize <= 1) return 1.0;
-  const minNVLinkGen = Math.min(
-    ...cardSpecs.map((s) => {
-      const gen = parseInt((s.interconnect ?? '').replace('NVLink', ''), 10);
-      return isNaN(gen) ? 0 : gen;
-    }),
-  );
+  // ★ 修复：Math.min(...spread) 在 10万元素时爆栈，改用循环
+  let minNVLinkGen = Infinity;
+  for (const s of cardSpecs) {
+    const gen = parseInt((s.interconnect ?? '').replace('NVLink', ''), 10);
+    const g = isNaN(gen) ? 0 : gen;
+    if (g < minNVLinkGen) minNVLinkGen = g;
+  }
+  if (minNVLinkGen === Infinity) minNVLinkGen = 0;
   const perCardOverhead = minNVLinkGen >= 4 ? 0.03 : minNVLinkGen >= 1 ? 0.06 : 0.12;
   return clamp(1 - (tpSize - 1) * perCardOverhead, 0.4, 1.0);
 }
@@ -312,10 +375,16 @@ export function calculateEffectiveCompute(
   modelParams?: ModelParams,
   /** 单节点最大卡槽数（用于判断是否跨节点，默认 8） */
   maxSlotsPerNode: number = 8,
+  /**
+   * 可选覆盖：当 cardSpecs 已去重（每型号一个 spec）时，
+   * 传入真实总卡数/总算力/总功耗，避免按去重后数组长度误算规模。
+   */
+  overrides?: { totalCardCount?: number; totalTflops?: number; actualPowerKW?: number },
 ): UtilizationResult {
-  const totalTflops = cardSpecs.reduce((sum, s) => sum + s.tflopsPerCard, 0);
+  const totalCardCount = overrides?.totalCardCount ?? cardSpecs.length;
+  const totalTflops = overrides?.totalTflops ?? cardSpecs.reduce((sum, s) => sum + s.tflopsPerCard, 0);
 
-  if (cardSpecs.length === 0 || totalTflops === 0) {
+  if (totalCardCount === 0 || totalTflops === 0) {
     return {
       totalTflops: 0,
       effectiveTflops: 0,
@@ -334,12 +403,14 @@ export function calculateEffectiveCompute(
   const bottlenecks: string[] = [];
 
   // ===== 1. 软件利用率 =====
-  let softwareUtil = 0.4;
-  for (const eff of techEffects) {
-    if (eff.type === 'improve_utilization') {
-      softwareUtil += eff.value;
-    }
-  }
+  // ★ PR-A 修复：原 Σ value 加法累加，100 个 +1% 技术即可推至 95% 利用率上限
+  //   改用乘法叠加 1 - Π(1-v)，硬性上限 +30%（max softwareUtil = 0.4 + 0.30 = 0.70）
+  //   示例：10 个 +3% 技术 → 旧 30%，新 1-0.97^10 = 26.3%
+  let softwareUtil = 0.4 + aggregateMultiplicative(
+    techEffects,
+    'improve_utilization',
+    TECH_EFFECT_CAPS.improve_utilization,
+  );
   softwareUtil = clamp(softwareUtil, 0, 0.95);
 
   // ===== 2. 集群利用率 =====
@@ -368,7 +439,9 @@ export function calculateEffectiveCompute(
   let actualPowerKW = 0;
   let powerUtilization = 0;
   if (dc) {
-    actualPowerKW = calcActualPowerDraw(cardSpecs, 'training');
+    // ★ 修复：当 cardSpecs 已去重时，用 override 传入的真实总功耗；
+    //   否则按原逻辑从 cardSpecs 计算
+    actualPowerKW = overrides?.actualPowerKW ?? calcActualPowerDraw(cardSpecs, 'training');
     const actualPowerMW = actualPowerKW / 1000;
     powerUtilization = dc.maxPowerMW > 0 ? actualPowerMW / dc.maxPowerMW : 0;
     powerFactor = calcPowerFactor(actualPowerMW, dc.maxPowerMW);
@@ -398,19 +471,28 @@ export function calculateEffectiveCompute(
 
     // 实际每卡需要承载的显存 = 总需求 / 并行内存缩减
     const requiredMem = estimateRequiredMemory(modelParams) / parallelMemReduction;
-    const minCardMem = Math.min(...cardSpecs.map((s) => s.memoryGB));
+    // ★ 修复：Math.min(...spread) 在 10万元素时爆栈，改用循环
+    let minCardMem = Infinity;
+    for (const s of cardSpecs) {
+      if (s.memoryGB < minCardMem) minCardMem = s.memoryGB;
+    }
+    if (minCardMem === Infinity) minCardMem = 0;
 
     if (requiredMem > minCardMem) {
       requiresParallel = true;
       parallelSize = Math.ceil(requiredMem / minCardMem);
-      parallelSize = Math.min(parallelSize, cardSpecs.length);
+      parallelSize = Math.min(parallelSize, totalCardCount);
 
       let perCardLoss = 0.03;
-      for (const eff of techEffects) {
-        if (eff.type === 'improve_parallel_efficiency') {
-          perCardLoss = Math.max(0.005, perCardLoss - eff.value);
-        }
-      }
+      // ★ PR-A 修复：improve_parallel_efficiency 改用乘法叠加 + 硬性上限 +50%
+      //   原加法累加下，N 个 1% 技术可让 perCardLoss 趋近 0.005 下限（并行几乎无损耗）
+      //   新乘法叠加下，效果按 1 - Π(1-v) 聚合，100 个 1% 技术最多降 63.4%（被 cap 50%）
+      const parallelEffBonus = aggregateMultiplicative(
+        techEffects,
+        'improve_parallel_efficiency',
+        TECH_EFFECT_CAPS.improve_parallel_efficiency,
+      );
+      perCardLoss = Math.max(0.005, perCardLoss - parallelEffBonus);
       const extraCards = parallelSize - 1;
       parallelEfficiency = clamp(1 - extraCards * perCardLoss, 0.3, 1);
       if (pc && (pc.ppStages > 1 || pc.tpSize > 1)) {
@@ -430,8 +512,13 @@ export function calculateEffectiveCompute(
   }
 
   // ===== 6. 互联带宽检查 =====
-  if (requiresParallel && cardSpecs.length > 1) {
-    const minBandwidth = Math.min(...cardSpecs.map((s) => s.memoryBandwidth));
+  if (requiresParallel && totalCardCount > 1) {
+    // ★ 修复：Math.min(...spread) 在 10万元素时爆栈，改用循环
+    let minBandwidth = Infinity;
+    for (const s of cardSpecs) {
+      if (s.memoryBandwidth < minBandwidth) minBandwidth = s.memoryBandwidth;
+    }
+    if (minBandwidth === Infinity) minBandwidth = 0;
     if (minBandwidth < 1000) {
       parallelEfficiency *= 0.9;
       bottlenecks.push('互联带宽不足');
@@ -452,7 +539,8 @@ export function calculateEffectiveCompute(
   }
 
   // ===== 8. 规模惩罚 =====
-  const scalePenalty = calcScalePenalty(cardSpecs.length);
+  // ★ 修复：用 totalCardCount（真实卡数）替代 cardSpecs.length（去重后仅型号数）
+  const scalePenalty = calcScalePenalty(totalCardCount, cluster?.networkTopology);
   if (scalePenalty < 1.0) {
     bottlenecks.push(`规模惩罚 (${(scalePenalty * 100).toFixed(1)}%)`);
   }
@@ -489,4 +577,113 @@ export function calculateEffectiveCompute(
     actualPowerKW,
     powerUtilization,
   };
+}
+
+/**
+ * ★ 聚合版卡规格摘要（十万卡场景性能优化）
+ *
+ * 替代直接展开为 ComputeCardSpec[]，避免为每张卡分配独立对象。
+ * 100k 卡 → 1k 桶 → 1k 摘要项，而非 100k 个 spec 对象。
+ */
+export interface CardSpecSummary {
+  /** 资源 id → 该型号规格与总卡数 */
+  entries: Array<{ spec: ComputeCardSpec; count: number }>;
+  /** 所有卡的总 TFlops */
+  totalTflops: number;
+  /** 实际卡数（按 count 累加） */
+  totalCards: number;
+  /** 是否存在任意卡 */
+  hasCards: boolean;
+  /** 用于计算 maxSlotsPerNode 的最大卡数（按单节点分组时可填充） */
+  maxCardsInSingleGroup?: number;
+}
+
+/**
+ * 从 (resourceId → {spec, count}) Map 构建 CardSpecSummary
+ *
+ * @param byResource 按资源分组的卡规格与数量
+ * @param _workload 负载类型（保留参数以备扩展，当前不影响摘要构建）
+ */
+export function summarizeCardSpecsFromMap(
+  byResource: Map<string, { spec: ComputeCardSpec; count: number }>,
+  _workload: WorkloadType = 'training',
+): CardSpecSummary {
+  const entries: Array<{ spec: ComputeCardSpec; count: number }> = [];
+  let totalTflops = 0;
+  let totalCards = 0;
+  for (const { spec, count } of byResource.values()) {
+    if (count <= 0) continue;
+    entries.push({ spec, count });
+    totalTflops += spec.tflopsPerCard * count;
+    totalCards += count;
+  }
+  return {
+    entries,
+    totalTflops,
+    totalCards,
+    hasCards: totalCards > 0,
+  };
+}
+
+/**
+ * 从 CardSpecSummary 提取去重的 ComputeCardSpec[]（每型号一个 spec）
+ *
+ * ★ 修复：原 expandSummary 按 count 复制 spec（10万卡 → 10万元素数组），
+ *   导致 Math.min(...cardSpecs.map(...)) 爆栈。
+ *   去重后仅 ~7 个元素（型号数），helper 函数只需型号属性，无需每卡一份。
+ *   总卡数/总算力/总功耗通过 overrides 传入。
+ */
+function deduplicateSummary(summary: CardSpecSummary): ComputeCardSpec[] {
+  return summary.entries.map((e) => e.spec);
+}
+
+/**
+ * 聚合存储版的有效算力计算
+ *
+ * 接受 CardSpecSummary 而非 ComputeCardSpec[]，避免上游为十万卡分配中间数组。
+ * 内部去重后传给 calculateEffectiveCompute，并通过 overrides 传入真实总卡数/总算力/总功耗。
+ */
+export function calculateEffectiveComputeFromSummary(
+  summary: CardSpecSummary,
+  cluster?: Cluster,
+  dc?: DataCenter,
+  techEffects: TechEffect[] = [],
+  modelParams?: ModelParams,
+  maxSlotsPerNode: number = 8,
+): UtilizationResult {
+  if (!summary.hasCards) {
+    return {
+      totalTflops: 0,
+      effectiveTflops: 0,
+      utilization: 0,
+      requiresParallel: false,
+      parallelSize: 0,
+      interconnectPenalty: 0,
+      crossNodePenalty: 0,
+      scalePenalty: 1.0,
+      homogeneityFactor: 1.0,
+      actualPowerKW: 0,
+      powerUtilization: 0,
+    };
+  }
+  // ★ 修复：去重（每型号一个 spec）替代按 count 展开，避免 10万元素数组 + Math.min 爆栈
+  const uniqueSpecs = deduplicateSummary(summary);
+  // 从 summary 直接计算真实总功耗（training 负载因子 0.95）
+  let actualPowerKW = 0;
+  for (const { spec, count } of summary.entries) {
+    actualPowerKW += count * spec.maxPowerDrawKW * 0.95;
+  }
+  return calculateEffectiveCompute(
+    uniqueSpecs,
+    cluster,
+    dc,
+    techEffects,
+    modelParams,
+    maxSlotsPerNode,
+    {
+      totalCardCount: summary.totalCards,
+      totalTflops: summary.totalTflops,
+      actualPowerKW,
+    },
+  );
 }

@@ -1,24 +1,32 @@
-import type { GameState, CardInstance } from '../GameState';
+import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { ResourceRegistry } from '../resources/ResourceRegistry';
 import { COMPUTE_CARD_SPECS } from '../config/computeCards';
 import type { ComputeCardSpec } from '../entities/ComputeCard';
 import type { CloudRentalContract } from '../commands/RentComputeCommand';
+import {
+  type CardPool,
+  addCards,
+  createEmptyPool,
+  migrateFromCards,
+} from '../utils/cardAggregate';
+
+/** 类型守卫：判断资源池是否为新聚合格式 */
+function isCardPool(v: unknown): v is CardPool {
+  return !!v && typeof v === 'object' && Array.isArray((v as any).aggregates);
+}
 
 /**
- * ComputeHardwareSystem
+ * ComputeHardwareSystem（聚合存储版）
  *
  * 关注硬件类资源（compute_h100, compute_a100 等）。
  * 职责：
- * 1. 处理采购订单交付：从 pendingOrders 中取出今日到期的订单，生成 CardInstance 入池，
- *    并增加对应资源数值。
- * 2. 计算卡磨损与故障：每张在线卡按 wearPerDay 概率故障，故障则状态置为 broken，
- *    资源数值相应减少。
+ * 1. 处理采购订单交付：从 pendingOrders 中取出今日到期的订单，按桶 addCards 入池
+ *    （1000 卡订单 → 1 个新桶），并增加对应资源数值。
  *
- * 硬件实例池存储在 state.resourceMeta[modelId] 中（CardInstance[]）。
+ * 硬件实例池存储在 state.resourceMeta[modelId] 中（CardPool）。
  * 资源数值（resources[modelId]）作为数量统计，与实例池保持同步。
- * CardInstance.location 指向所在节点 id（未安装为 null）。
  *
  * 扩展新硬件型号：只需在 config/computeCards.ts 添加配置并注册对应资源，本系统自动处理。
  */
@@ -47,18 +55,18 @@ export class ComputeHardwareSystem implements System {
 
         for (const order of dueOrders) {
           const spec = this.specs.get(order.modelId);
-          const pool = (draft.resourceMeta[order.modelId] as CardInstance[]) ?? [];
-          for (let i = 0; i < order.quantity; i++) {
-            pool.push({
-              uid: `${order.modelId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i}`,
-              modelId: order.modelId,
-              status: 'online',
-              age: 0,
-              assignedProjectId: null,
-              purchasedAt: today,
-              location: null,
-            });
+          const rawPool = draft.resourceMeta[order.modelId];
+          let pool: CardPool;
+          if (isCardPool(rawPool)) {
+            pool = rawPool;
+          } else if (Array.isArray(rawPool)) {
+            // 旧版数组，迁移
+            pool = migrateFromCards(rawPool, order.modelId);
+          } else {
+            pool = createEmptyPool();
           }
+          // 聚合 addCards：1000 卡 → 1 个 ageBucket=0 桶
+          pool = addCards(pool, order.modelId, order.quantity, today);
           draft.resourceMeta[order.modelId] = pool;
           // 同步硬件资源数值
           draft.resources[order.modelId] = (draft.resources[order.modelId] ?? 0) + order.quantity;
@@ -79,11 +87,11 @@ export class ComputeHardwareSystem implements System {
       }
     }
 
-    // 注意：计算卡磨损与故障由 InfrastructureFailureSystem 统一处理，
-    // 避免双重故障计数。
+    // 注意：计算卡磨损与故障由 InfrastructureFailureSystem 统一处理（按桶统计）
 
     // 3. 处理云算力租赁合约到期
-    const cloudContracts = (current.resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
+    const rawCloudContracts = current.resourceMeta['cloud_rental_contracts'];
+    const cloudContracts: CloudRentalContract[] = Array.isArray(rawCloudContracts) ? rawCloudContracts : [];
     const expiredContracts = cloudContracts.filter((c) => c.expiresAt <= today);
     if (expiredContracts.length > 0) {
       let tfopsReleased = 0;
@@ -91,8 +99,8 @@ export class ComputeHardwareSystem implements System {
         tfopsReleased += contract.tflops;
       }
       state.update((draft) => {
-        // 设计-3 修复：云算力不再写入 compute_power，到期时也无需扣减。
-        const activeContracts = (draft.resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
+        const rawActive = draft.resourceMeta['cloud_rental_contracts'];
+        const activeContracts: CloudRentalContract[] = Array.isArray(rawActive) ? rawActive : [];
         draft.resourceMeta['cloud_rental_contracts'] = activeContracts.filter((c) => c.expiresAt > today);
       });
       for (const contract of expiredContracts) {
@@ -105,9 +113,17 @@ export class ComputeHardwareSystem implements System {
     }
   }
 
-  /** 获取某型号当前可用的（在线未分配）卡实例列表 */
-  getAvailableCards(state: GameState, modelId: string): CardInstance[] {
-    const pool = state.getResourceMeta<CardInstance[]>(modelId) ?? [];
-    return pool.filter((c) => c.status === 'online' && c.assignedProjectId === null);
+  /**
+   * 获取某型号当前可用的（在线未分配）卡数（聚合版）
+   * 返回 0 或正整数
+   */
+  getAvailableCardCount(state: GameState, modelId: string): number {
+    const pool = state.getResourceMeta<CardPool>(modelId);
+    if (!pool || !isCardPool(pool)) return 0;
+    let n = 0;
+    for (const agg of pool.aggregates) {
+      if (agg.status === 'online' && agg.location === null) n += agg.count;
+    }
+    return n;
   }
 }

@@ -2,10 +2,9 @@ import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import { getCardSpec } from '../config/computeCards';
-import { calcActualPowerDraw, type WorkloadType } from '../utils/computeUtilization';
+import { type WorkloadType } from '../utils/computeUtilization';
 import { getRegionModifiers } from './RegionSystem';
 import { getCompanyPowerReduction } from '../utils/crossSystemUtils';
-import { getCardIndex } from '../utils/cardIndex';
 
 /**
  * InfraMaintenanceSystem
@@ -27,6 +26,9 @@ export class InfraMaintenanceSystem implements System {
 
   update(state: GameState, events: EventBus, deltaDays: number): void {
     const current = state.read();
+
+    // ★ 性能：预建 cluster Map 索引，O(N) 替代 N×M 次 find
+    const clusterById = new Map(current.clusters.map((c) => [c.id, c]));
 
     // 1. 计算各层级日维护成本
     let totalNodeMaintenance = 0;
@@ -60,12 +62,13 @@ export class InfraMaintenanceSystem implements System {
       }
 
       // 计算实际功耗：遍历集群中所有在线卡，按训练/空闲分档
-      const trainingCardSpecs: Array<NonNullable<ReturnType<typeof getCardSpec>>> = [];
-      const idleCardSpecs: Array<NonNullable<ReturnType<typeof getCardSpec>>> = [];
-      const cardIndex = getCardIndex(current);
+      // ★ 性能优化：用聚合桶 O(桶数) 统计替代 O(卡数) 的 UID 遍历
+      //   10万卡场景：O(几千桶) vs O(10万UID + cardIndex.get + push spec)
+      let trainingPowerKW = 0;
+      let idlePowerKW = 0;
 
       for (const clusterId of dc.clusters) {
-        const cluster = current.clusters.find((c) => c.id === clusterId);
+        const cluster = clusterById.get(clusterId);
         if (!cluster) continue;
 
         // 判断该集群是否有活跃训练项目
@@ -73,29 +76,27 @@ export class InfraMaintenanceSystem implements System {
           (p) => p.clusterId === clusterId && p.status === 'training',
         );
         const workload: WorkloadType = hasActiveTraining ? 'training' : 'idle';
+        const powerFactor = workload === 'idle' ? 0.10 : 0.95;
+        const clusterNodeSet = new Set(cluster.nodes);
 
-        for (const nodeId of cluster.nodes) {
-          const node = current.serverNodes.find((n) => n.id === nodeId);
-          if (!node) continue;
-          for (const cardUid of node.installedCards) {
-            const entry = cardIndex.get(cardUid);
-            if (entry && entry.card.status === 'online') {
-              const spec = getCardSpec(entry.modelId);
-              if (spec) {
-                if (workload === 'training') {
-                  trainingCardSpecs.push(spec);
-                } else {
-                  idleCardSpecs.push(spec);
-                }
+        // 遍历所有 modelId 池的聚合桶，按 location ∈ cluster.nodes 累加功耗
+        for (const modelId of Object.keys(current.resourceMeta)) {
+          const pool = current.resourceMeta[modelId];
+          if (!pool || !Array.isArray((pool as any).aggregates)) continue;
+          const spec = getCardSpec(modelId);
+          if (!spec) continue;
+          for (const agg of (pool as any).aggregates) {
+            if (agg.status === 'online' && agg.count > 0 && agg.location && clusterNodeSet.has(agg.location)) {
+              const power = agg.count * spec.maxPowerDrawKW * powerFactor;
+              if (workload === 'training') {
+                trainingPowerKW += power;
+              } else {
+                idlePowerKW += power;
               }
             }
           }
         }
       }
-
-      // 按负载分档计算功耗
-      const trainingPowerKW = calcActualPowerDraw(trainingCardSpecs, 'training');
-      const idlePowerKW = calcActualPowerDraw(idleCardSpecs, 'idle');
       const totalPowerKW = trainingPowerKW + idlePowerKW;
       const actualPowerMW = totalPowerKW / 1000;
 
@@ -115,12 +116,14 @@ export class InfraMaintenanceSystem implements System {
       }
     }
 
-    const totalCost = (totalNodeMaintenance + totalClusterOps + totalDcMaintenance) * deltaDays + totalDcPowerCost;
+    const totalNonPowerCost = (totalNodeMaintenance + totalClusterOps + totalDcMaintenance) * deltaDays;
+    const totalCost = totalNonPowerCost + totalDcPowerCost;
 
     // 扣款 + PUE 更新
     state.update((draft) => {
+      // ★ P0-2 修复：Math.max(0, ...) 保护资金下界
       if (totalCost > 0) {
-        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - totalCost;
+        draft.resources['funds'] = Math.max(0, (draft.resources['funds'] ?? 0) - totalCost);
       }
 
       // 设计-2：把冷却功耗电费累加到 lastDayPowerCost（与 PowerSystem 的 IT 电费合并）
@@ -130,6 +133,16 @@ export class InfraMaintenanceSystem implements System {
           draft.lastDayPowerCost = 0;
         }
         draft.lastDayPowerCost += totalDcPowerCost;
+      }
+
+      // ★ R1：把非电力维护成本（节点+集群+DC 维护）累加到 lastDayInfraCost，
+      //     供 RegionSystem 计算利润税基 O(1) 读取，避免重复 O(N) 遍历。
+      if (totalNonPowerCost > 0) {
+        if (draft.lastDayInfraCostDate !== current.date) {
+          draft.lastDayInfraCostDate = current.date;
+          draft.lastDayInfraCost = 0;
+        }
+        draft.lastDayInfraCost += totalNonPowerCost;
       }
 
       // 更新 PUE 衰减

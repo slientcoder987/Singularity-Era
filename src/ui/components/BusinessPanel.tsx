@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { EnterRegionCommand, PublishInRegionCommand } from '../../core/commands/RegionCommands';
@@ -18,6 +19,7 @@ import {
 } from '../../core/commands/HostileCommands';
 import { calcValuation } from '../../core/utils/marketCalc';
 import { getActiveCloudTFLOPS } from '../../core/utils/cloudComputeUtils';
+import { useFormatDate } from '../hooks/useFormatDate';
 import { REGION_MAP, LANGUAGE_NAMES, getRegionsByContinent } from '../../core/config/regions';
 import styles from '../styles/App.module.css';
 
@@ -57,7 +59,8 @@ export function BusinessPanel() {
         ))}
       </div>
 
-      <div style={{ display: tab === 'regions' ? 'block' : 'none' }}>
+      {/* ★ UI-1 修复：display:none → 条件渲染，隐藏 tab 自动卸载订阅 */}
+      {tab === 'regions' && (
         <RegionsTab
           game={game}
           headquartersRegionId={headquartersRegionId}
@@ -65,16 +68,10 @@ export function BusinessPanel() {
           publishedRegions={publishedRegions}
           funds={funds}
         />
-      </div>
-      <div style={{ display: tab === 'operations' ? 'block' : 'none' }}>
-        <OperationsTab game={game} />
-      </div>
-      <div style={{ display: tab === 'funding' ? 'block' : 'none' }}>
-        <FundingTab game={game} />
-      </div>
-      <div style={{ display: tab === 'competitive' ? 'block' : 'none' }}>
-        <CompetitiveTab game={game} />
-      </div>
+      )}
+      {tab === 'operations' && <OperationsTab game={game} />}
+      {tab === 'funding' && <FundingTab game={game} />}
+      {tab === 'competitive' && <CompetitiveTab game={game} />}
     </section>
   );
 }
@@ -174,17 +171,43 @@ function RegionsTab({
 /* ============== 竞争（情报 + 激进操作） ============== */
 
 function CompetitiveTab({ game }: { game: ReturnType<typeof useGame> }) {
-  const competitorStates = useGameState((s) => (s as any).competitorStates ?? []);
-  const externalCorps = useGameState((s) => (s as any).externalCorps ?? []);
+  // ★ P0-3 修复：去掉 ?? [] 兜底，避免每次返回新空数组触发无限重渲染
+  // GameState 初始化时已保证 competitorStates/externalCorps 为 []
+  const competitorStates = useGameState((s) => s.competitorStates);
+  const externalCorps = useGameState((s) => s.externalCorps);
   const funds = useGameState((s) => s.resources['funds'] ?? 0);
+  const formatDay = useFormatDate();
+
+  // ★ UI-5 修复：原 map 内对每个 competitor 都调用 Object.values(c.capabilities).reduce，
+  //   且两个 map 各算一次 avgCap（重复工作）。改为 useMemo 一次性计算。
+  const competitorInfo = useMemo(() => {
+    return competitorStates.map((c: any) => {
+      const avgCap = Object.values(c.capabilities as Record<string, number>).reduce((s: number, v: number) => s + v, 0) / 16;
+      const valuationM = c.funds * 10 + c.computeUnits * 0.5 + c.headcount * 0.2 + avgCap * 2;
+      const acqCost = Math.floor(valuationM * M * 1.5);
+      return { c, avgCap, valuationM, acqCost };
+    });
+  }, [competitorStates]);
+
+  // ★ UI-5 修复：原 flatMap + sort + slice 每次渲染都重建数组。改为 useMemo。
+  const recentIntel = useMemo(() => {
+    return competitorStates
+      .flatMap((c: any) => c.intel.map((i: any) => ({ ...i, source: c.name })))
+      .sort((a: any, b: any) => b.day - a.day)
+      .slice(0, 20);
+  }, [competitorStates]);
+
+  const hasIntel = useMemo(
+    () => competitorStates.some((c: any) => c.intel.length > 0),
+    [competitorStates],
+  );
 
   return (
     <div className={styles.tabBody}>
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>竞争对手动态 ({competitorStates.length})</span>
       </div>
-      {competitorStates.map((c: any) => {
-        const avgCap = Object.values(c.capabilities as Record<string, number>).reduce((s: number, v: number) => s + v, 0) / 16;
+      {competitorInfo.map(({ c, avgCap }) => {
         return (
           <div key={c.id} className={styles.devRow}>
             <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
@@ -201,18 +224,14 @@ function CompetitiveTab({ game }: { game: ReturnType<typeof useGame> }) {
       <div className={styles.devRow}>
         <span className={styles.devRowLabel} style={{ marginTop: '12px' }}>最新情报</span>
       </div>
-      {competitorStates
-        .flatMap((c: any) => c.intel.map((i: any) => ({ ...i, source: c.name })))
-        .sort((a: any, b: any) => b.day - a.day)
-        .slice(0, 20)
-        .map((intel: any) => (
-          <div key={intel.id} className={styles.devRow}>
-            <span className={styles.devHint} style={{ color: intel.severity === 'critical' ? '#ff6b6b' : intel.severity === 'warning' ? '#f0ad4e' : '#888' }}>
-              [{intel.day}天] [{intel.source}] {intel.title}: {intel.description}
-            </span>
-          </div>
-        ))}
-      {!competitorStates.some((c: any) => c.intel.length > 0) && (
+      {recentIntel.map((intel: any) => (
+        <div key={intel.id} className={styles.devRow}>
+          <span className={styles.devHint} style={{ color: intel.severity === 'critical' ? '#ff6b6b' : intel.severity === 'warning' ? '#f0ad4e' : '#888' }}>
+            [{formatDay(intel.day)}] [{intel.source}] {intel.title}: {intel.description}
+          </span>
+        </div>
+      ))}
+      {!hasIntel && (
         <div className={styles.emptyHint}>暂无情报 · 渗透竞争对手以获得研发动态</div>
       )}
 
@@ -220,12 +239,7 @@ function CompetitiveTab({ game }: { game: ReturnType<typeof useGame> }) {
         <span className={styles.devRowLabel} style={{ marginTop: '12px', color: '#ff6b6b' }}>激进操作</span>
       </div>
 
-      {competitorStates.map((c: any) => {
-        const avgCap = Object.values(c.capabilities as Record<string, number>).reduce((s: number, v: number) => s + v, 0) / 16;
-        // 估值 M → 实际美元
-        const valuationM = c.funds * 10 + c.computeUnits * 0.5 + c.headcount * 0.2 + avgCap * 2;
-        const valuation = valuationM * M;
-        const acqCost = Math.floor(valuation * 1.5);
+      {competitorInfo.map(({ c, valuationM, acqCost }) => {
         return (
           <div key={c.id}>
             <div className={styles.devRow}>
@@ -292,6 +306,17 @@ function OperationsTab({ game }: { game: ReturnType<typeof useGame> }) {
 
   const [price, setPrice] = useState(pricing.pricePerMillion);
   const [alloc, setAlloc] = useState(pricing.inferenceAllocation);
+
+  // ★ P1-9 修复：useState 派生值不随系统自动调价刷新
+  //   系统在 tick 时重算 pricePerMillion（如竞争对手定价反推），本地 price 不会更新
+  //   → 用户再点"应用"会覆盖系统自动调价
+  // 修复：系统值变化时同步本地 input
+  useEffect(() => {
+    setPrice(pricing.pricePerMillion);
+  }, [pricing.pricePerMillion]);
+  useEffect(() => {
+    setAlloc(pricing.inferenceAllocation);
+  }, [pricing.inferenceAllocation]);
 
   const handlePricing = () => {
     game.executeCommand(new SetTokenPricingCommand(price, alloc));
@@ -398,12 +423,19 @@ function FundingTab({ game }: { game: ReturnType<typeof useGame> }) {
   const cloudComputePower = useGameState((s) => getActiveCloudTFLOPS(s));
   const totalComputePower = computePower + cloudComputePower;
   const missions = ops?.boardMissions ?? [];
+  const formatDay = useFormatDate();
 
   // ★ 设计 #8：估值考虑训练进度、算力、团队（前期收入为 0 也能合理估值）
-  const publishedModels = models.filter((m) => m.published);
-  const bestCap = publishedModels.length > 0 ? Math.max(...publishedModels.map((m) => m.baseScore)) : 0;
-  const annualRevenue = (ops?.dailyRevenue ?? 0) * 365;
-  const valuation = calcValuation({
+  // ★ UI-5 修复：将 publishedModels/bestCap/valuation/totalProgress 用 useMemo 包裹，
+  //   避免每次渲染都重新 filter + Math.max + calcValuation。
+  const publishedModels = useMemo(() => models.filter((m) => m.published), [models]);
+  const bestCap = useMemo(
+    () => publishedModels.length > 0 ? Math.max(...publishedModels.map((m) => m.baseScore)) : 0,
+    [publishedModels],
+  );
+  // dailyRevenue 是实际美元，calcValuation 期望百万美元
+  const annualRevenue = (ops?.dailyRevenue ?? 0) * 365 / 1_000_000;
+  const valuation = useMemo(() => calcValuation({
     annualRevenue,
     bestCapability: bestCap,
     headquartersRegionId: hqId,
@@ -414,12 +446,13 @@ function FundingTab({ game }: { game: ReturnType<typeof useGame> }) {
     })),
     totalComputeTFLOPS: totalComputePower,
     employeeCount: employees.length,
-  });
+  }), [annualRevenue, bestCap, hqId, trainingProjects, totalComputePower, employees.length]);
 
   // 训练管线总进度（用于显示）
-  const totalProgress = trainingProjects.length > 0
+  const totalProgress = useMemo(() => trainingProjects.length > 0
     ? trainingProjects.reduce((s, p) => s + (p.computeTotal > 0 ? 1 - p.computeRemaining / p.computeTotal : 0), 0) / trainingProjects.length
-    : 0;
+    : 0,
+  [trainingProjects]);
 
   return (
     <div className={styles.tabBody}>
@@ -540,7 +573,7 @@ function FundingTab({ game }: { game: ReturnType<typeof useGame> }) {
                 · {m.title}
               </span>
               <span className={styles.devHint} style={{ color: m.status === 'failed' ? '#ff6b6b' : m.status === 'completed' ? '#5cb85c' : '#888' }}>
-                {m.status} {m.deadline > 0 && `· 截止第${m.deadline}天`}
+                {m.status} {m.deadline > 0 && `· 截止 ${formatDay(m.deadline)}`}
               </span>
             </div>
           ))}

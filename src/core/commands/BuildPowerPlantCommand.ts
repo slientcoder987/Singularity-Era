@@ -37,9 +37,11 @@ export class BuildPowerPlantCommand implements Command {
     // 增加电力容量
     state.addResource('power_kw', this.capacityKW);
 
-    // 记录电站元数据
+    // 记录电站元数据（防御：旧存档可能被展平为对象）
     const today = state.read().date;
-    const plants = state.getResourceMeta<any[]>('power_plants') ?? [];
+    const rawPlants = state.getResourceMeta<any>('power_plants');
+    const plants: Array<{ id: string; capacityKW: number; builtAt: number; cost: number }> =
+      Array.isArray(rawPlants) ? rawPlants : [];
     const newPlant = {
       id: `plant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       capacityKW: this.capacityKW,

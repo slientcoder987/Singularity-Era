@@ -18,6 +18,8 @@ import { RegionSystem } from './core/systems/RegionSystem';
 import { OperationsSystem } from './core/systems/OperationsSystem';
 import { CompetitorSystem } from './core/systems/CompetitorSystem';
 import { SmallCompanyMarketSystem } from './core/systems/SmallCompanyMarketSystem';
+import { UniqueTechMaintenanceSystem } from './core/systems/UniqueTechMaintenanceSystem';
+import { PostTrainingSystem } from './core/systems/PostTrainingSystem';
 import { INITIAL_RESOURCES } from './core/config/resources';
 import { createInitialDataset } from './core/config/datasets';
 import { EXTERNAL_CORPS } from './core/entities/Competitor';
@@ -75,6 +77,7 @@ const initialData: GameData = {
   archMatrixSeed: Math.floor(Math.random() * 1e9),
   // P1 研发流程与风险系统
   researchProjects: [],
+  experimentQueue: [],
   experimentResults: [],
   riskState: {
     legalDebt: 0,
@@ -108,6 +111,9 @@ const initialData: GameData = {
   // 设计-2：电力成本统一记账初始值
   lastDayPowerCost: 0,
   lastDayPowerCostDate: -1,
+  // ★ R1 修复：基础设施维护成本统一记账
+  lastDayInfraCost: 0,
+  lastDayInfraCostDate: -1,
   // 研发系统扩展（技术路线 / 成熟度 / idea / 小公司 / 开源）
   pendingIdeas: [],
   smallCompanies: [],
@@ -122,7 +128,7 @@ const registry = new ResourceRegistry();
 registry.registerAll(INITIAL_RESOURCES);
 
 // 系统执行顺序（按每日依赖关系排列）：
-// ComputeHardware → Power → TechResearch → Research → Collection → InfraFailure → Training → InfraMaintenance → Operations → Competitor → Risk → Region → Staff
+// ComputeHardware → Power → TechResearch → Research → Collection → InfraFailure → Training → InfraMaintenance → UniqueTechMaintenance → Operations → Competitor → Risk → Region → Staff
 // StaffSystem 放在最后：确保绩效评估在 Research/Collection/Training 贡献累积之后执行，
 // 同时确保 morale→loyalty 联动使用 Operations 已更新的当日士气值。
 const systems = [
@@ -135,6 +141,8 @@ const systems = [
   new InfrastructureFailureSystem(),
   new TrainingSystem(),
   new InfraMaintenanceSystem(),
+  new UniqueTechMaintenanceSystem(),
+  new PostTrainingSystem(),
   new OperationsSystem(),
   new CompetitorSystem(),
   new SmallCompanyMarketSystem(),

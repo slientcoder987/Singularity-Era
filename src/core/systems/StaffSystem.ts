@@ -230,7 +230,8 @@ export class StaffSystem implements System {
 
     if (totalSalary > 0) {
       state.update((draft) => {
-        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - totalSalary;
+        // ★ P0-2 修复：Math.max(0, ...) 保护资金下界
+        draft.resources['funds'] = Math.max(0, (draft.resources['funds'] ?? 0) - totalSalary);
       });
       // 每 30 天发射一次 SALARY_PAID 事件（供 UI 展示月度薪资报告）
       if (today > 0 && today % PAY_PERIOD_DAYS === 0) {

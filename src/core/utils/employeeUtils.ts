@@ -30,23 +30,77 @@ export function loyaltyFactor(loyalty: number): number {
   return 1.0 + Math.max(0, (loyalty - 80) / 20) * 0.05;
 }
 
+/**
+ * ★ E1 修复：departmentBonus 缓存。
+ *
+ * 原实现每次调用都 employees.find O(E)，在 per-researcher × per-project 循环下
+ * 产生 O(P × R × E) 复杂度。改为嵌套 WeakMap（dept ref → employees ref → 结果），
+ * 相同 (dept, employees) 引用下 O(1) 命中。
+ * Immer 保证 departments/employees 任一变更时产生新引用，缓存自动失效。
+ */
+const _deptBonusCache = new WeakMap<object, WeakMap<object, number>>();
+
 /** 部门加成：负责人领导力 × 0.3%，最高 +30% */
 export function departmentBonus(dept: Department | undefined, employees: Employee[]): number {
   if (!dept || !dept.headId) return 1.0;
+  let inner = _deptBonusCache.get(dept);
+  if (inner === undefined) {
+    inner = new WeakMap<object, number>();
+    _deptBonusCache.set(dept, inner);
+  }
+  const cached = inner.get(employees);
+  if (cached !== undefined) return cached;
+
   const head = employees.find((e) => e.id === dept.headId);
-  if (!head) return 1.0;
-  return 1.0 + (head.attributes.leadership / 100) * 0.3;
+  const result = head ? 1.0 + (head.attributes.leadership / 100) * 0.3 : 1.0;
+  inner.set(employees, result);
+  return result;
 }
+
+/**
+ * ★ E1 修复：companyCoordination 缓存。
+ *
+ * 原实现每次调用 departments.map + employees.find = O(D × E)，
+ * 在 per-researcher × per-project 循环下产生 O(P × R × D × E) 复杂度。
+ * 改为嵌套 WeakMap（departments ref → employees ref → 结果）。
+ */
+const _coordinationCache = new WeakMap<object, WeakMap<object, number>>();
 
 /** 全公司协同加成：所有部门负责人领导力平均 × 0.1%，最高 +10% */
 export function companyCoordination(departments: Department[], employees: Employee[]): number {
+  let inner = _coordinationCache.get(departments);
+  if (inner === undefined) {
+    inner = new WeakMap<object, number>();
+    _coordinationCache.set(departments, inner);
+  }
+  const cached = inner.get(employees);
+  if (cached !== undefined) return cached;
+
   const heads = departments
     .map((d) => employees.find((e) => e.id === d.headId))
     .filter((e): e is Employee => e !== undefined);
-  if (heads.length === 0) return 1.0;
-  const avgLeadership = heads.reduce((s, e) => s + e.attributes.leadership, 0) / heads.length;
-  return 1.0 + (avgLeadership / 100) * 0.1;
+  const result = heads.length === 0
+    ? 1.0
+    : 1.0 + (heads.reduce((s, e) => s + e.attributes.leadership, 0) / heads.length / 100) * 0.1;
+  inner.set(employees, result);
+  return result;
 }
+
+/**
+ * ★ E1 修复：calcEmployeeEfficiency 缓存。
+ *
+ * 原实现每次调用都重新计算 departmentBonus + companyCoordination（含 O(D×E) 扫描）。
+ * 改为嵌套 WeakMap（departments ref → employees ref → Map<empId, efficiency>）。
+ * 首次调用 O(R × D × E) 填充，后续相同引用下 O(1) 命中。
+ *
+ * 安全性：cache key 为 departments/employees 引用。Immer 保证：
+ * - 在单个 state.update() 回调内，draft.departments/draft.employees 引用稳定 → 缓存命中
+ * - 跨 update 时产生新引用 → 缓存自动失效
+ * - calcEmployeeEfficiency 依赖 emp.level/attributes/fatigue/loyalty + 部门负责人 leadership，
+ *   这些字段在 TrainingSystem/ResearchSystem 的项目循环中不被修改（仅 monthlyContribution 变化），
+ *   因此单次 update 内缓存值始终有效。
+ */
+const _efficiencyCache = new WeakMap<object, WeakMap<object, Map<string, number>>>();
 
 /** 计算核心员工综合效率 */
 export function calcEmployeeEfficiency(
@@ -54,15 +108,29 @@ export function calcEmployeeEfficiency(
   departments: Department[],
   employees: Employee[],
 ): number {
+  let outer = _efficiencyCache.get(departments);
+  if (outer === undefined) {
+    outer = new WeakMap<object, Map<string, number>>();
+    _efficiencyCache.set(departments, outer);
+  }
+  let empMap = outer.get(employees);
+  if (empMap === undefined) {
+    empMap = new Map<string, number>();
+    outer.set(employees, empMap);
+  }
+  const cached = empMap.get(emp.id);
+  if (cached !== undefined) return cached;
+
   const dept = departments.find((d) => d.id === emp.departmentId);
-  return (
+  const result =
     baseEfficiency(emp.level) *
     attributeFactor(emp) *
     fatigueFactor(emp.fatigue) *
     loyaltyFactor(emp.loyalty) *
     departmentBonus(dept, employees) *
-    companyCoordination(departments, employees)
-  );
+    companyCoordination(departments, employees);
+  empMap.set(emp.id, result);
+  return result;
 }
 
 /** 普通员工效率：1.0 × 部门加成 × 协同加成 × 地区人才加成 × 管理效率

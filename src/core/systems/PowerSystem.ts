@@ -1,4 +1,4 @@
-import type { GameState, CardInstance } from '../GameState';
+import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { System } from '../interfaces/System';
 import type { ResourceRegistry } from '../resources/ResourceRegistry';
@@ -6,6 +6,7 @@ import { COMPUTE_CARD_SPECS } from '../config/computeCards';
 import type { ComputeCardSpec } from '../entities/ComputeCard';
 import { POWER_CONFIG } from '../config/resources';
 import { getRegionModifiers } from './RegionSystem';
+import { countInstalledOnlineCards } from '../utils/cardAggregate';
 
 /**
  * PowerSystem
@@ -34,51 +35,59 @@ export class PowerSystem implements System {
   }
 
   update(state: GameState, events: EventBus, deltaDays: number): void {
+    if (deltaDays <= 0) return;
     const hardwareDefs = this.registry.getByCategory('hardware');
 
     // 1. 计算在线硬件总功耗
-    let totalPowerKW = POWER_CONFIG.baseConsumptionKW;
+    // ★ P0-1 修复：baseConsumptionKW 是数据中心基础设施照明/监控等基础耗电
+    //   （已包含在 PUE 1.0 之内），不再重复收取 IT 电费
+    //   冷却部分 (PUE-1) 由 InfraMaintenanceSystem 收取
+    //   PowerSystem 只收 IT 设备耗电
+    let itPowerKW = 0;
     const current = state.read();
 
     for (const def of hardwareDefs) {
       const spec = this.specs.get(def.id);
       if (!spec) continue;
-      const pool = (current.resourceMeta[def.id] as CardInstance[]) ?? [];
-      const onlineCount = pool.filter((c) => c.status === 'online').length;
-      totalPowerKW += onlineCount * spec.powerPerCard;
+      // ★ 修复：只统计已安装到节点的 online 卡；库存/运输中（location=null）不耗电
+      const installedCount = countInstalledOnlineCards(current.resourceMeta[def.id]);
+      itPowerKW += installedCount * spec.powerPerCard;
     }
 
     // 2. 与电力容量比较
     const capacityKW = current.resources['power_kw'] ?? 0;
-    const excessKW = Math.max(0, totalPowerKW - capacityKW);
+    const excessKW = Math.max(0, itPowerKW - capacityKW);
 
     // 3. 电力计费
-    // ★ Bug #3 修复：PowerSystem 统一收取 IT 功耗电费
-    // 自建电站覆盖容量内按数据中心电价收费，超出部分按市场电价（更高）收费
-    // 冷却功耗（PUE-1 部分）由 InfraMaintenanceSystem 收取
-    const itPowerKW = totalPowerKW; // 卡本身功耗
-    const coveredKW = Math.min(itPowerKW, capacityKW);
-    const uncoveredKW = Math.max(0, itPowerKW - capacityKW);
-
     if (itPowerKW > 0) {
       const regionMods = getRegionModifiers(current.headquartersRegionId);
       const marketPricePerKWh = POWER_CONFIG.pricePerKWh * regionMods.energyMultiplier;
 
-      // 自建电站覆盖部分：按数据中心电价（较低）
-      const dcPowerCost = current.dataCenters.reduce((sum, dc) => {
-        return sum + dc.powerCostPerKWh;
-      }, 0);
-      const dcPricePerKWh = current.dataCenters.length > 0
-        ? dcPowerCost / current.dataCenters.length
+      // 自建电站覆盖部分：按各 DC 实际承载 kW 加权平均电价
+      // ★ P0-1 修复：之前是简单算术平均，多 DC 不同电价时全员按均价收
+      //   修正后按各 DC maxPowerMW 加权
+      let totalWeight = 0;
+      let weightedPriceSum = 0;
+      for (const dc of current.dataCenters) {
+        const weight = dc.maxPowerMW;
+        totalWeight += weight;
+        weightedPriceSum += dc.powerCostPerKWh * weight;
+      }
+      const dcPricePerKWh = totalWeight > 0
+        ? weightedPriceSum / totalWeight
         : marketPricePerKWh;
+
+      const coveredKW = Math.min(itPowerKW, capacityKW);
+      const uncoveredKW = Math.max(0, itPowerKW - capacityKW);
 
       // 覆盖部分费用 + 超容部分费用
       const coveredCost = coveredKW * 24 * dcPricePerKWh * deltaDays;
       const gridCost = uncoveredKW * 24 * marketPricePerKWh * deltaDays;
       const totalPowerCost = coveredCost + gridCost;
 
+      // ★ P0-2 修复：使用 addResource 统一保护资金下界
+      state.addResource('funds', -totalPowerCost);
       state.update((draft) => {
-        draft.resources['funds'] = (draft.resources['funds'] ?? 0) - totalPowerCost;
         // 设计-2：累加当日电力成本，供 RegionSystem 计算利润税基
         if (draft.lastDayPowerCostDate !== current.date) {
           draft.lastDayPowerCostDate = current.date;
@@ -89,9 +98,9 @@ export class PowerSystem implements System {
 
       if (uncoveredKW > 0) {
         events.emit('GRID_PURCHASE', {
-          consumptionKW: totalPowerKW,
+          consumptionKW: itPowerKW,
           capacityKW,
-          excessKW,
+          excessKW: uncoveredKW,
           marketPricePerKWh,
           dailyCost: gridCost / deltaDays,
           deltaDays,
@@ -101,7 +110,7 @@ export class PowerSystem implements System {
 
     // 4. 发射电力平衡事件（供 UI 和其他系统使用）
     events.emit('POWER_BALANCE', {
-      consumptionKW: totalPowerKW,
+      consumptionKW: itPowerKW,
       capacityKW,
       shortage: false, // 不再有硬性停电
       excessKW,

@@ -36,7 +36,8 @@ export class RaiseFundingCommand implements Command {
     const current = state.read();
 
     // 计算估值（★ 设计 #8：考虑训练进度、算力、团队）
-    const annualRevenue = (current.operations?.dailyRevenue ?? 0) * 365;
+    // dailyRevenue 是实际美元，calcValuation 期望百万美元
+    const annualRevenue = (current.operations?.dailyRevenue ?? 0) * 365 / 1_000_000;
     const publishedModels = current.models.filter((m) => m.published);
     const bestCap = publishedModels.length > 0
       ? Math.max(...publishedModels.map((m) => m.baseScore))
@@ -63,7 +64,20 @@ export class RaiseFundingCommand implements Command {
       government: 0.03 + Math.random() * 0.05,
       ipo: 0.20 + Math.random() * 0.20,
     };
-    const amount = valuation * typeMultiplier[this.params.type];
+    // BUG 修复：非法融资类型校验，防止 typeMultiplier[xxx]=undefined 导致 amount=NaN 污染资金链
+    const multiplier = typeMultiplier[this.params.type];
+    if (multiplier === undefined || !Number.isFinite(multiplier)) {
+      events.emit('FUNDING_REJECTED', {
+        reason: `非法融资类型: ${String(this.params.type)}`,
+        validTypes: Object.keys(typeMultiplier),
+      });
+      return;
+    }
+    const amount = valuation * multiplier;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      events.emit('FUNDING_REJECTED', { reason: '融资金额计算异常', valuation });
+      return;
+    }
 
     state.update((draft) => {
       if (!draft.operations) {

@@ -3,12 +3,13 @@ import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import { IDEA_TECH_MAP } from '../config/techTree';
 import { OPEN_SOURCE_TECH_POOL } from '../config/openSourcePool';
+import { canAcceptUniqueTechs, getMaxUniqueTechSlots, getUniqueTechCount } from '../utils/uniqueTechSlots';
 
 /**
  * 采纳开源技术
  *
- * 校验：offer 存在 / 未采纳 / 未过期 / 资金充足。
- * 效果：扣资金、标记 adoptedDay、注册独有技术到 IDEA_TECH_MAP、应用初始 maturity=30（取较大值避免降级）。
+ * 校验：offer 存在 / 未采纳 / 未过期 / 资金充足 / 独有技术槽位（PR-E）。
+ * 效果：扣资金、标记 adoptedDay、注册独有技术到 IDEA_TECH_MAP、应用初始 maturity（PR-D：20~40）。
  */
 export class AdoptOpenSourceCommand implements Command {
   constructor(private readonly offerId: string) {}
@@ -31,6 +32,18 @@ export class AdoptOpenSourceCommand implements Command {
     const funds = current.resources['funds'] ?? 0;
     if (funds < offer.adoptionCost) {
       events.emit('OPEN_SOURCE_REJECTED', { reason: '资金不足' });
+      return;
+    }
+
+    // PR-E：若该开源技术属于独有技术池，检查槽位
+    const isUniqueTech = !!OPEN_SOURCE_TECH_POOL.find((t) => t.id === offer.techId)
+      && !IDEA_TECH_MAP[offer.techId]; // 已注册的不重复占槽
+    if (isUniqueTech && !canAcceptUniqueTechs(current, 1)) {
+      const used = getUniqueTechCount(current);
+      const max = getMaxUniqueTechSlots(current);
+      events.emit('OPEN_SOURCE_REJECTED', {
+        reason: `独有技术槽位已满 (${used}/${max})`,
+      });
       return;
     }
 

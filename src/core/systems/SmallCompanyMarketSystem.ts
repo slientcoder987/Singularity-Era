@@ -3,10 +3,13 @@
  *
  * 每 14 天刷新 2~3 家小公司进入市场。
  * 小公司拥有 1~3 个技术，生命周期 30 天，到期未收购则消失。
- * 估值 = $200k + techCount × ($100k~$500k)。
+ *
+ * PR-D：
+ * - 每项技术在生成时即 roll 初始成熟度（20~80），玩家收购前可见
+ * - 估值公式：$200k + Σ_tech($50k + maturity × $5k)（成熟度越高越贵）
+ * - 收购时应用 company.techMaturities 而非固定 60
  *
  * 技术来源：50% 小公司独有池 / 50% 主技术树未解锁技术。
- * 收购后初始 maturity=60（含专利/团队）。
  */
 import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
@@ -94,14 +97,26 @@ export class SmallCompanyMarketSystem implements System {
           }
           if (techs.length === 0) continue;
 
-          // 估值：基础 $200k + 每技术 $100k~$500k
-          const perTech = 100_000 + Math.random() * 400_000;
-          const valuation = Math.round(200_000 + techs.length * perTech);
+          // PR-D：为每项技术 roll 初始成熟度（20~80），并据此计算估值
+          // 公式：valuation = $200k + Σ_tech($50k + maturity × $5k)
+          // - 1 项 maturity=20 → $350k
+          // - 1 项 maturity=80 → $650k
+          // - 3 项平均 maturity=50 → $1.25M
+          // - 3 项 maturity=80 → $1.7M
+          const techMaturities: Record<string, number> = {};
+          let valuation = 200_000;
+          for (const tid of techs) {
+            const mat = 20 + Math.floor(Math.random() * 61); // 20~80
+            techMaturities[tid] = mat;
+            valuation += 50_000 + mat * 5_000;
+          }
+          valuation = Math.round(valuation);
 
           draft.smallCompanies.push({
             id: genId(`sc-${draft.date}-${i}`),
             name,
             technologies: techs,
+            techMaturities,
             valuation,
             spawnedDay: draft.date,
             lifespan: LIFESPAN,

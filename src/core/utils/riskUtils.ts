@@ -79,7 +79,10 @@ export function calcTrainingCrashProbability(
   _hasGradientClipping: boolean,
   infrastructureReliability: number,
 ): number {
-  let baseProb = 0.001 * parallelSize;
+  // 数值修复：基础系数 0.001 → 0.0005，64 卡并行/reliability=80 时日崩溃率
+  // 从 0.08 (8%) 降至 0.04 (4%)，550 天期望崩溃次数由 ~44 降至 ~22，挫败感减半。
+  let baseProb = 0.0005 * parallelSize;
   baseProb *= 100 / Math.max(1, infrastructureReliability);
-  return Math.min(0.1, baseProb);
+  // 上限 0.1 → 0.05，避免极端并行规模下每日必然崩溃
+  return Math.min(0.05, baseProb);
 }

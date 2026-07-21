@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { StartTrainingCommand, CancelTrainingCommand, ReallocateTrainingCardsCommand } from '../../core/commands/TrainingCommands';
@@ -11,6 +12,12 @@ import {
   CreateDatasetCommand,
   DeleteDatasetCommand,
 } from '../../core/commands/DataCommands';
+import {
+  PurgeDatasetCommand,
+  DedupDatasetCommand,
+  CurateDatasetCommand,
+} from '../../core/commands/DataOperationCommands';
+import { DistillCompetitorCommand } from '../../core/commands/DistillCompetitorCommand';
 import { ALL_TECH } from '../../core/config/techTree';
 import { CAPABILITIES } from '../../core/config/capabilities';
 import { observeCapabilities, calcNoiseSigma, calcTrainingCompute } from '../../core/utils/capabilityCalc';
@@ -24,15 +31,20 @@ import {
 } from '../../core/config/dataAcquisition';
 import { StaffRole } from '../../core/entities/Employee';
 import { ROLE_TO_STAFF_RESOURCE } from '../../core/config/employees';
-import type { Model } from '../../core/entities/Model';
+import { getDaysSincePublished } from '../../core/entities/Model';
+import { countOnlineCardsByNode } from '../../core/utils/cardAggregate';
+import type { Model, PostTrainingStage } from '../../core/entities/Model';
+import { useFormatDate } from '../hooks/useFormatDate';
 import styles from '../styles/App.module.css';
 
-type ModelTab = 'training' | 'models' | 'data';
+type ModelTab = 'training' | 'models' | 'data' | 'distill' | 'posttrain';
 
 const MODEL_TABS: { key: ModelTab; label: string; icon: string }[] = [
   { key: 'training', label: '训练', icon: '🎯' },
   { key: 'models', label: '模型', icon: '🧠' },
   { key: 'data', label: '数据', icon: '📊' },
+  { key: 'distill', label: '蒸馏', icon: '⚗️' },
+  { key: 'posttrain', label: '后训练', icon: '🔧' },
 ];
 
 export function ModelPanel() {
@@ -54,15 +66,12 @@ export function ModelPanel() {
         ))}
       </div>
 
-      <div style={{ display: tab === 'training' ? 'block' : 'none' }}>
-        <TrainingTab />
-      </div>
-      <div style={{ display: tab === 'models' ? 'block' : 'none' }}>
-        <ModelsTab />
-      </div>
-      <div style={{ display: tab === 'data' ? 'block' : 'none' }}>
-        <DataTab />
-      </div>
+      {/* ★ UI-1 修复：display:none → 条件渲染，隐藏 tab 自动卸载订阅 */}
+      {tab === 'training' && <TrainingTab />}
+      {tab === 'models' && <ModelsTab />}
+      {tab === 'data' && <DataTab />}
+      {tab === 'distill' && <DistillTab />}
+      {tab === 'posttrain' && <PostTrainingTab />}
     </section>
   );
 }
@@ -75,14 +84,30 @@ function TrainingTab() {
   const datasets = useGameState((s) => s.datasets);
   const trainingProjects = useGameState((s) => s.trainingProjects);
   const techMaturity = useGameState((s) => s.techMaturity);
-  const serverNodes = useGameState((s) => s.serverNodes);
-  const resourceMeta = useGameState((s) => s.resourceMeta);
+  // ★ U6 修复：原订阅 s.serverNodes + s.resourceMeta 整个对象引用，
+  //   任意卡状态变化（故障/恢复/安装）都触发 TrainingTab 重渲染 + diagnosis 重算。
+  //   改为订阅派生字符串，仅捕获选中集群的卡状态摘要（online/total/节点数/utilizationBonus），
+  //   其他集群的卡变化不再触发重渲染。clusters 保留订阅（下拉列表需要）。
+  const formatDay = useFormatDate();
 
   const [modelName, setModelName] = useState('GPT-7B');
   const [paramCount, setParamCount] = useState(7);
   const [contextLength, setContextLength] = useState(4096);
   const [selectedClusterId, setSelectedClusterId] = useState('');
   const [selectedDatasetId, setSelectedDatasetId] = useState('dataset-initial');
+
+  // ★ P1-9 修复：useState 派生值不随数据更新，数据集被删后下拉仍指向已删 id
+  useEffect(() => {
+    if (selectedDatasetId && !datasets.some((d) => d.id === selectedDatasetId)) {
+      setSelectedDatasetId(datasets[0]?.id ?? '');
+    }
+  }, [datasets, selectedDatasetId]);
+  // 同步 clusterId：未选或选中已不存在的 cluster
+  useEffect(() => {
+    if (selectedClusterId && !clusters.some((c) => c.id === selectedClusterId)) {
+      setSelectedClusterId(clusters[0]?.id ?? '');
+    }
+  }, [clusters, selectedClusterId]);
 
   // 根据 Chinchilla 缩放定律自动计算训练所需算力
   const selectedDataset = datasets.find((d) => d.id === selectedDatasetId);
@@ -110,16 +135,36 @@ function TrainingTab() {
   const activeProjects = trainingProjects.filter((p) => p.status === 'training');
   const pausedProjects = trainingProjects.filter((p) => p.status === 'paused');
 
+  // ★ U6 修复 + 性能优化：派生字符串捕获选中集群的状态摘要。
+  //   仅在选中集群的卡数/在线数/节点数/utilizationBonus 变化时才变化。
+  //   ★ 性能：用聚合桶 O(桶数) 统计替代 O(卡数) 的 UID 遍历，10万卡场景从 ~50ms 降至 <1ms
+  const clusterStateKey = useGameState((s) => {
+    if (!selectedClusterId) return '';
+    const cluster = s.clusters.find((c) => c.id === selectedClusterId);
+    if (!cluster) return '';
+    const nodeIdSet = new Set(cluster.nodes);
+    const onlineByNode = countOnlineCardsByNode(s.resourceMeta, nodeIdSet);
+    let key = `${cluster.utilizationBonus}|${cluster.networkTopology}|${cluster.nodes.length}`;
+    for (const nodeId of cluster.nodes) {
+      const node = s.serverNodes.find((n) => n.id === nodeId);
+      const installed = node?.installedCards.length ?? 0;
+      const online = onlineByNode.get(nodeId)?.total ?? 0;
+      key += `|${nodeId}:${installed}:${online}`;
+    }
+    return key;
+  });
+
   // 实时诊断：参数或基础设施状态变化时重算
   const arch = selectedArchs.has('moe') ? 'moe' : 'transformer';
   const diagnosis = useMemo(
     () => selectedClusterId
       ? diagnoseTraining(paramCount, contextLength, arch, selectedClusterId, game.state)
       : [],
-    // clusters/serverNodes/resourceMeta 经 diagnoseTraining → state.read() 间接读取，
-    // game.state 实例引用稳定，必须依赖这三者以在状态变化时触发重算（修复 stale 诊断 bug）
+    // ★ U6 修复：用 clusterStateKey 替代 serverNodes + resourceMeta 依赖，
+    //   仅在选中集群状态真正变化时重算 diagnosis，避免无关卡故障触发的级联重算。
+    //   clusters 保留依赖（下拉需要 + 集群拓扑变化需重算）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedClusterId, paramCount, contextLength, arch, clusters, serverNodes, resourceMeta, game.state],
+    [selectedClusterId, paramCount, contextLength, arch, clusters, clusterStateKey, game.state],
   );
 
   const blockers = diagnosis.filter((d) => d.severity === 'blocker');
@@ -371,7 +416,7 @@ function TrainingTab() {
                               log.severity === 'warning' ? '#ffb454' : '#888',
                           }}
                         >
-                          第{log.day}天: {log.event}
+                          {formatDay(log.day)}: {log.event}
                         </span>
                       ))}
                     </span>
@@ -480,8 +525,10 @@ function LossSparkline({
 
 function ModelsTab() {
   const models = useGameState((s) => s.models);
+  const today = useGameState((s) => s.date);
   const game = useGame();
   const [selectedModelId, setSelectedModelId] = useState<string>('');
+  const formatDay = useFormatDate();
 
   if (models.length === 0) {
     return <div className={styles.emptyHint}>尚无已完成模型，请在"训练"标签启动训练</div>;
@@ -502,7 +549,7 @@ function ModelsTab() {
           <option value="">选择模型...</option>
           {models.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.name} ({m.paramCount}B · 第{m.completedAt}天){m.published ? ' ✓已发布' : ' ⏳未发布'}
+              {m.name} ({m.paramCount}B · {formatDay(m.completedAt)}){m.published ? ' ✓已发布' : ' ⏳未发布'}
             </option>
           ))}
         </select>
@@ -517,7 +564,7 @@ function ModelsTab() {
             {selectedModel.published ? (
               <>
                 <span className={styles.devHint} style={{ color: '#5cb85c' }}>
-                  ✓ 已发布（第 {selectedModel.daysSincePublished} 天）· 正在产生市场收入与 Token 收入
+                  ✓ 已发布 {getDaysSincePublished(selectedModel, today)} 天 · 正在产生市场收入与 Token 收入
                 </span>
                 <button
                   className={`${styles.btn} ${styles.btnWarn}`}
@@ -565,8 +612,14 @@ function ModelsTab() {
 }
 
 function ModelDetail({ model }: { model: Model }) {
-  // 生成带噪声的观测值
-  const observed = observeCapabilities(model, model.noiseSeed);
+  const today = useGameState((s) => s.date);
+  // ★ I2 修复：用派生值替代 model.daysSincePublished（每日 ++ 已移除）
+  const daysSincePublished = getDaysSincePublished(model, today);
+  // 生成带噪声的观测值（observeCapabilities 接收鸭子类型 model 对象，需含 daysSincePublished 字段）
+  const observed = observeCapabilities(
+    { ...model, daysSincePublished },
+    model.noiseSeed,
+  );
 
   return (
     <>
@@ -582,7 +635,7 @@ function ModelDetail({ model }: { model: Model }) {
       </div>
       {CAPABILITIES.filter((c) => c.visible).map((cap) => {
         const val = observed[cap.id];
-        const sigma = calcNoiseSigma(cap, model.evaluationResearchers, model.daysSincePublished);
+        const sigma = calcNoiseSigma(cap, model.evaluationResearchers, daysSincePublished);
         const isEmerged = model.rawCapabilities[cap.id] >= cap.emergenceThreshold;
         return (
           <div key={cap.id} className={styles.devRow}>
@@ -607,7 +660,7 @@ function ModelDetail({ model }: { model: Model }) {
       </div>
       {CAPABILITIES.filter((c) => !c.visible).map((cap) => {
         const val = observed[cap.id];
-        const sigma = calcNoiseSigma(cap, model.evaluationResearchers, model.daysSincePublished);
+        const sigma = calcNoiseSigma(cap, model.evaluationResearchers, daysSincePublished);
         const isEmerged = model.rawCapabilities[cap.id] >= cap.emergenceThreshold;
         return (
           <div key={cap.id} className={styles.devRow}>
@@ -646,6 +699,19 @@ function DataTab() {
   const [synthDomain, setSynthDomain] = useState<string>('code');
   const [synthAmount, setSynthAmount] = useState<number>(5);
   const [newDatasetName, setNewDatasetName] = useState<string>('');
+
+  // ★ P1-9 修复：同步 selectedDatasetId 派生值
+  useEffect(() => {
+    if (selectedDatasetId && !datasets.some((d) => d.id === selectedDatasetId)) {
+      setSelectedDatasetId(datasets[0]?.id ?? '');
+    }
+  }, [datasets, selectedDatasetId]);
+  // 同步 synthModelId
+  useEffect(() => {
+    if (synthModelId && !models.some((m) => m.id === synthModelId)) {
+      setSynthModelId(models[0]?.id ?? '');
+    }
+  }, [models, synthModelId]);
 
   // 新建收集任务状态
   const [selectedRoute, setSelectedRoute] = useState<string>(COLLECTION_ROUTES[0].id);
@@ -954,6 +1020,417 @@ function DataTab() {
             </button>
           </div>
         </>
+      )}
+
+      {/* ===== 数据操作（清洗/去重/精选） ===== */}
+      {(techMaturity['data_cleaning_v1'] ?? 0) >= 1 && (
+        <DataOperationsSection dataset={dataset} selectedDatasetId={selectedDatasetId} />
+      )}
+    </div>
+  );
+}
+
+/** 数据操作子组件（展示在 DataTab 中） */
+function DataOperationsSection({ dataset, selectedDatasetId }: { dataset: any; selectedDatasetId: string }) {
+  const game = useGame();
+  const date = useGameState((s) => s.date);
+  const techMaturity = useGameState((s) => s.techMaturity);
+  const cooldowns = useGameState((s) => s.dataAcquisitionCooldowns);
+
+  const purgeMat = techMaturity['data_cleaning_v1'] ?? 0;
+  const dedupMat = techMaturity['data_deduplication'] ?? 0;
+  const curateMat = techMaturity['data_curation'] ?? 0;
+
+  const [purgeDomain, setPurgeDomain] = useState<string>('');
+  const [curateDomain, setCurateDomain] = useState<string>('');
+
+  const hasAnyDataOp = purgeMat >= 1 || dedupMat >= 1 || curateMat >= 1;
+  if (!hasAnyDataOp) return null;
+
+  return (
+    <>
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel} style={{ marginTop: '8px' }}>数据操作</span>
+      </div>
+
+      {/* 数据清洗 */}
+      {purgeMat >= 1 && dataset && (
+        <div className={styles.devRow}>
+          <span className={styles.devRowLabel} style={{ minWidth: '100px' }}>
+            数据清洗
+          </span>
+          <select
+            className={styles.select}
+            value={purgeDomain}
+            onChange={(e) => setPurgeDomain(e.target.value)}
+            style={{ width: '120px' }}
+          >
+            <option value="">选择领域</option>
+            {Object.values(dataset.domains as Record<string, { id: string; tokens: number }>)
+              .filter((d: any) => d.tokens > 0)
+              .map((d: any) => (
+                <option key={d.id} value={d.id}>{d.id} ({d.tokens.toFixed(1)}B)</option>
+              ))}
+          </select>
+          <button
+            className={styles.btn}
+            style={{ opacity: purgeDomain ? 1 : 0.5 }}
+            disabled={!purgeDomain}
+            onClick={() => {
+              game.executeCommand(new PurgeDatasetCommand(selectedDatasetId, purgeDomain as any));
+              setPurgeDomain('');
+            }}
+          >
+            清洗
+          </button>
+          <span className={styles.devHint}>
+          {(() => {
+            const lastPurge = cooldowns['purge_' + selectedDatasetId] ?? -999;
+            const remaining = 30 - (date - lastPurge);
+            const onCooldown = remaining > 0;
+            const matScale = purgeMat / 100;
+            const purgeRatio = (0.15 * matScale * 100).toFixed(0);
+            const qualityGain = (0.10 * matScale * 100).toFixed(0);
+            return onCooldown
+              ? `冷却 ${remaining} 天`
+              : `移除 ${purgeRatio}% tokens · 质量+${qualityGain}%`;
+          })()}
+          </span>
+        </div>
+      )}
+
+      {/* 数据去重 */}
+      {dedupMat >= 1 && dataset && (
+        <div className={styles.devRow}>
+          <span className={styles.devRowLabel} style={{ minWidth: '100px' }}>
+            数据去重
+          </span>
+          <button
+            className={styles.btn}
+            onClick={() => game.executeCommand(new DedupDatasetCommand(selectedDatasetId))}
+          >
+            去重
+          </button>
+          <span className={styles.devHint}>
+          {(() => {
+            const lastDedup = cooldowns['dedup_' + selectedDatasetId] ?? -999;
+            const remaining = 60 - (date - lastDedup);
+            const onCooldown = remaining > 0;
+            const matScale = dedupMat / 100;
+            const reduction = (0.20 * matScale * 100).toFixed(0);
+            return onCooldown
+              ? `冷却 ${remaining} 天`
+              : `重复度 -${reduction}%`;
+          })()}
+          </span>
+        </div>
+      )}
+
+      {/* 数据精选 */}
+      {curateMat >= 1 && dataset && (
+        <div className={styles.devRow}>
+          <span className={styles.devRowLabel} style={{ minWidth: '100px' }}>
+            数据精选
+          </span>
+          <select
+            className={styles.select}
+            value={curateDomain}
+            onChange={(e) => setCurateDomain(e.target.value)}
+            style={{ width: '120px' }}
+          >
+            <option value="">选择目标领域</option>
+            {Object.values(dataset.domains as Record<string, { id: string; tokens: number }>)
+              .filter((d: any) => d.tokens > 0)
+              .map((d: any) => (
+                <option key={d.id} value={d.id}>{d.id} ({d.tokens.toFixed(1)}B)</option>
+              ))}
+          </select>
+          <button
+            className={styles.btn}
+            style={{ opacity: curateDomain ? 1 : 0.5 }}
+            disabled={!curateDomain}
+            onClick={() => {
+              game.executeCommand(new CurateDatasetCommand(selectedDatasetId, curateDomain as any));
+              setCurateDomain('');
+            }}
+          >
+            精选
+          </button>
+          <span className={styles.devHint}>
+          {(() => {
+            const lastCurate = cooldowns['curate_' + selectedDatasetId] ?? -999;
+            const remaining = 45 - (date - lastCurate);
+            const onCooldown = remaining > 0;
+            const matScale = curateMat / 100;
+            const qualityGain = (0.15 * matScale * 100).toFixed(0);
+            return onCooldown
+              ? `冷却 ${remaining} 天`
+              : `目标域质量+${qualityGain}% · 其他域 -5% tokens`;
+          })()}
+          </span>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ============== 蒸馏标签 ============== */
+
+function DistillTab() {
+  const game = useGame();
+  const techMaturity = useGameState((s) => s.techMaturity);
+  const competitorStates = useGameState((s) => s.competitorStates);
+  const date = useGameState((s) => s.date);
+  const cooldowns = useGameState((s) => s.dataAcquisitionCooldowns);
+  const funds = useGameState((s) => s.resources['funds'] ?? 0);
+  const formatDay = useFormatDate();
+
+  const distillMat = techMaturity['distillation'] ?? 0;
+  const lastDistill = cooldowns?.['distill'] ?? -999;
+  const cooldownRemaining = 90 - (date - lastDistill);
+  const onCooldown = cooldownRemaining > 0;
+
+  const [selectedCompId, setSelectedCompId] = useState<string>('');
+  const [selectedModelIdx, setSelectedModelIdx] = useState<number>(-1);
+  const [studentName, setStudentName] = useState<string>('');
+
+  if (distillMat < 1) {
+    return (
+      <div className={styles.tabBody}>
+        <div className={styles.devRow}>
+          <span className={styles.devHint}>未解锁蒸馏技术（需 distillation 技术成熟度 ≥ 1）</span>
+        </div>
+      </div>
+    );
+  }
+
+  const matScale = distillMat / 100;
+  const distillEfficiency = Math.min(0.95, 0.70 * matScale);
+
+  const compsWithModels = competitorStates.filter((c) => c.releasedModels.length > 0);
+  const selectedComp = compsWithModels.find((c) => c.id === selectedCompId);
+  const selectedModel = selectedComp && selectedModelIdx >= 0
+    ? selectedComp.releasedModels[selectedModelIdx] : null;
+
+  const studentParams = selectedModel ? Math.max(1, Math.round(selectedModel.paramCount * 0.15)) : 0;
+  const fundsCost = selectedModel ? 50000 * selectedModel.paramCount : 0;
+
+  return (
+    <div className={styles.tabBody}>
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>蒸馏竞品模型</span>
+        <span className={styles.devHint}>
+          蒸馏效率 {(distillEfficiency * 100).toFixed(0)}% · 学生模型参数量 = 教师 × 15% · 90天冷却
+          {onCooldown && <span style={{ color: '#ff6b6b' }}> · 冷却 {cooldownRemaining} 天</span>}
+        </span>
+      </div>
+
+      {compsWithModels.length === 0 ? (
+        <div className={styles.devHint} style={{ paddingLeft: '20px' }}>
+          暂无已发布模型的竞品公司
+        </div>
+      ) : (
+        <>
+          <div className={styles.devRow}>
+            <span className={styles.devRowLabel} style={{ minWidth: '100px' }}>竞品公司</span>
+            <select
+              className={styles.select}
+              value={selectedCompId}
+              onChange={(e) => { setSelectedCompId(e.target.value); setSelectedModelIdx(-1); }}
+            >
+              <option value="">选择公司</option>
+              {compsWithModels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.releasedModels.length} 个模型)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedComp && (
+            <div className={styles.devRow}>
+              <span className={styles.devRowLabel} style={{ minWidth: '100px' }}>教师模型</span>
+              <select
+                className={styles.select}
+                value={selectedModelIdx}
+                onChange={(e) => setSelectedModelIdx(Number(e.target.value))}
+              >
+                <option value={-1}>选择模型</option>
+                {selectedComp.releasedModels.map((m, i) => (
+                  <option key={i} value={i}>
+                    {m.name} ({m.paramCount}B · 基准分 {m.baseScore.toFixed(2)} · {formatDay(m.day)})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {selectedModel && (
+            <>
+              <div className={styles.devRow}>
+                <span className={styles.devRowLabel} style={{ minWidth: '100px' }}>学生模型名</span>
+                <input
+                  className={styles.input}
+                  value={studentName}
+                  onChange={(e) => setStudentName(e.target.value)}
+                  placeholder={`${selectedModel.name}-distilled`}
+                  style={{ width: '200px' }}
+                />
+              </div>
+              <div className={styles.devHint} style={{ paddingLeft: '4px' }}>
+                教师: {selectedModel.name} ({selectedModel.paramCount}B) →
+                学生: {studentParams}B · 效率 {(distillEfficiency * 100).toFixed(0)}% · 费用 ${fundsCost.toLocaleString()}
+              </div>
+              <div className={styles.devRow}>
+                <button
+                  className={styles.btn}
+                  style={{ opacity: (studentName.trim() && !onCooldown && funds >= fundsCost) ? 1 : 0.5 }}
+                  disabled={!studentName.trim() || onCooldown || funds < fundsCost}
+                  onClick={() => {
+                    game.executeCommand(
+                      new DistillCompetitorCommand(selectedCompId, selectedModelIdx, studentName),
+                    );
+                    setStudentName('');
+                    setSelectedModelIdx(-1);
+                  }}
+                >
+                  蒸馏
+                </button>
+                {funds < fundsCost && (
+                  <span className={styles.devHint} style={{ color: '#ff6b6b' }}>
+                    资金不足（需 ${fundsCost.toLocaleString()}）
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ============== 后训练标签 ============== */
+
+const POST_TRAINING_STAGES = [
+  { stage: 'sft' as const, name: 'SFT', desc: '监督微调', unlockTech: 'sft', requires: null as PostTrainingStage | null },
+  { stage: 'rlhf' as const, name: 'RLHF', desc: '强化学习人类反馈', unlockTech: 'rlhf', requires: 'sft' as PostTrainingStage },
+  { stage: 'dpo' as const, name: 'DPO', desc: '直接偏好优化', unlockTech: 'dpo', requires: 'sft' as PostTrainingStage },
+  { stage: 'cot' as const, name: 'CoT', desc: '思维链训练', unlockTech: 'cot_training', requires: 'sft' as PostTrainingStage },
+];
+
+function PostTrainingTab() {
+  const game = useGame();
+  const models = useGameState((s) => s.models);
+  const techMaturity = useGameState((s) => s.techMaturity);
+  const funds = useGameState((s) => s.resources['funds'] ?? 0);
+
+  const hasAnyPostTrainingTech = POST_TRAINING_STAGES.some(
+    (s) => (techMaturity[s.unlockTech] ?? 0) >= 1,
+  );
+
+  if (!hasAnyPostTrainingTech) {
+    return (
+      <div className={styles.tabBody}>
+        <div className={styles.devRow}>
+          <span className={styles.devHint}>未解锁任何后训练技术（需 SFT/RLHF/DPO/CoT 技术成熟度 ≥ 1）</span>
+        </div>
+      </div>
+    );
+  }
+
+  const trainableModels = models.filter((m) => m.architecture !== 'distilled');
+
+  return (
+    <div className={styles.tabBody}>
+      <div className={styles.devRow}>
+        <span className={styles.devRowLabel}>后训练阶段</span>
+        <span className={styles.devHint}>
+          在模型完成预训练后，推进 SFT → RLHF/DPO → CoT 阶段。计算和资金在启动时扣除。
+        </span>
+      </div>
+
+      {trainableModels.length === 0 ? (
+        <div className={styles.devHint} style={{ paddingLeft: '20px' }}>暂无可后训练的模型</div>
+      ) : (
+        trainableModels.map((model) => {
+          const pt = model.postTraining ?? [];
+          const completedStages = pt.filter((p) => p.status === 'completed').map((p) => p.stage);
+          const inProgress = pt.find((p) => p.status === 'in_progress');
+          const pending = pt.find((p) => p.status === 'pending');
+
+          const availableStages = POST_TRAINING_STAGES.filter((stage) => {
+            const techMat = techMaturity[stage.unlockTech] ?? 0;
+            if (techMat < 1) return false;
+            if (completedStages.includes(stage.stage)) return false;
+            if (inProgress || pending) return false;
+            if (stage.requires && !completedStages.includes(stage.requires)) return false;
+            if (stage.stage === 'rlhf' && completedStages.includes('dpo')) return false;
+            if (stage.stage === 'dpo' && completedStages.includes('rlhf')) return false;
+            return true;
+          });
+
+          return (
+            <div key={model.id} className={styles.devRow} style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className={styles.devRowLabel} style={{ minWidth: 0 }}>
+                  {model.name} ({model.paramCount}B)
+                </span>
+                <span className={styles.devHint}>
+                  {completedStages.length > 0 ? `已完成: ${completedStages.join(' → ')}` : '未开始后训练'}
+                  {inProgress && (
+                    <span style={{ color: '#ffb454' }}>
+                      {' · '}进行中: {inProgress.stage.toUpperCase()} ({((1 - inProgress.computeRemaining / inProgress.computeTotal) * 100).toFixed(0)}%)
+                    </span>
+                  )}
+                  {pending && (
+                    <span style={{ color: '#7ab8e0' }}>
+                      {' · '}等待: {pending.stage.toUpperCase()}
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              {availableStages.length > 0 && (
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', paddingLeft: '16px' }}>
+                  {availableStages.map((stage) => {
+                    const computeCost = model.paramCount * (stage.stage === 'sft' ? 2 : stage.stage === 'rlhf' ? 5 : stage.stage === 'dpo' ? 3 : 4);
+                    const fundsCost = model.paramCount * (stage.stage === 'sft' ? 10 : stage.stage === 'rlhf' ? 30 : stage.stage === 'dpo' ? 15 : 20) * 1000;
+                    const canAfford = funds >= fundsCost;
+                    return (
+                      <button
+                        key={stage.stage}
+                        className={styles.btn}
+                        style={{ fontSize: '12px', opacity: canAfford ? 1 : 0.5 }}
+                        disabled={!canAfford}
+                        onClick={() => {
+                          game.state.update((draft) => {
+                            const m = draft.models.find((x) => x.id === model.id);
+                            if (!m) return;
+                            m.postTraining.push({
+                              stage: stage.stage,
+                              status: 'pending',
+                              computeRemaining: computeCost,
+                              computeTotal: computeCost,
+                              startedAt: 0,
+                              completedAt: null,
+                            });
+                          });
+                        }}
+                        title={canAfford ? '' : `资金不足（需 $${fundsCost.toLocaleString()}）`}
+                      >
+                        {stage.name}
+                        <span style={{ fontSize: '10px', color: 'var(--text-dim)', marginLeft: '4px' }}>
+                          ${(fundsCost / 1000).toFixed(0)}k
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
     </div>
   );

@@ -33,27 +33,16 @@ export function App() {
       <GameControls activeView={activeView} onViewChange={setActiveView} />
 
       <main className={styles.pageMain}>
-        <div style={{ display: activeView === 'resources' ? 'block' : 'none' }}>
-          <ResourceDevPanel />
-        </div>
-        <div style={{ display: activeView === 'employees' ? 'block' : 'none' }}>
-          <EmployeePanel />
-        </div>
-        <div style={{ display: activeView === 'infrastructure' ? 'block' : 'none' }}>
-          <InfrastructurePanel />
-        </div>
-        <div style={{ display: activeView === 'models' ? 'block' : 'none' }}>
-          <ModelPanel />
-        </div>
-        <div style={{ display: activeView === 'research' ? 'block' : 'none' }}>
-          <ResearchPanel />
-        </div>
-        <div style={{ display: activeView === 'business' ? 'block' : 'none' }}>
-          <BusinessPanel />
-        </div>
-        <div style={{ display: activeView === 'settings' ? 'block' : 'none' }}>
-          <SettingsPanel />
-        </div>
+        {/* ★ UI-1 修复：原 display:none 模式让 7 大面板常驻订阅，
+            每次 tick 触发所有面板重渲染。改为条件渲染后，
+            未激活面板自动卸载，订阅清理。 */}
+        {activeView === 'resources' && <ResourceDevPanel />}
+        {activeView === 'employees' && <EmployeePanel />}
+        {activeView === 'infrastructure' && <InfrastructurePanel />}
+        {activeView === 'models' && <ModelPanel />}
+        {activeView === 'research' && <ResearchPanel />}
+        {activeView === 'business' && <BusinessPanel />}
+        {activeView === 'settings' && <SettingsPanel />}
       </main>
 
       <footer className={styles.footer}>

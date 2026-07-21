@@ -1,0 +1,69 @@
+Singularity.AI — AI 公司模拟经营游戏
+=====================================
+
+文件夹结构
+----------
+  project4-release/
+  ├── source/            ← 用 Trae 打开此文件夹即可查看和编辑源码
+  ├── game/              ← 打包好的游戏（构建产物 + 服务器）
+  │   ├── dist/          ← 游戏文件（HTML/JS/CSS）
+  │   └── server.mjs     ← Node.js 静态服务器
+  ├── 启动游戏.bat       ← 双击启动游戏
+  └── 使用说明.txt       ← 本文件
+
+
+快速开始
+--------
+1. 双击「启动游戏.bat」即可启动游戏
+   - 启动器会自动检测环境并选择最佳启动方式
+   - 推荐安装 Node.js 或 Python 以获得最佳体验
+
+2. 游戏启动后浏览器会自动打开
+   - 服务器地址: http://127.0.0.1:5174 (Node.js) 或 http://127.0.0.1:8000 (Python)
+   - 关闭命令行窗口即可停止游戏服务器
+
+
+查看和编辑源码
+--------------
+1. 打开 Trae IDE
+2. 文件 → 打开文件夹 → 选择「source」文件夹
+3. 即可查看和编辑所有 TypeScript/React 源码
+
+在源码中运行开发服务器:
+   cd source
+   pnpm install      （首次需要安装依赖）
+   pnpm dev          （启动开发服务器，默认 http://localhost:5173）
+
+重新构建游戏:
+   cd source
+   pnpm install      （首次需要安装依赖）
+   pnpm build        （构建到 dist 文件夹）
+   然后将 dist 文件夹复制到 game/ 下覆盖旧版本
+
+
+环境要求
+--------
+运行游戏（任选其一）:
+  - Node.js 18+ （推荐，下载: https://nodejs.org/）
+  - Python 3.8+ （下载: https://www.python.org/）
+  - 或直接打开 game/dist/index.html（部分功能可能受限）
+
+开发源码:
+  - Node.js 18+
+  - pnpm （npm install -g pnpm）
+
+
+故障排除
+--------
+Q: 启动器闪退？
+A: 右键「启动游戏.bat」→ 编辑，检查路径是否正确；或手动在命令行运行
+
+Q: 端口被占用？
+A: 关闭占用端口的程序，或编辑 game/server.mjs 修改 PORT 常量
+
+Q: 直接打开 index.html 白屏？
+A: 浏览器控制台可能有 CORS 错误，请使用启动器或安装 Node.js/Python
+
+Q: 游戏存档丢失？
+A: 存档保存在浏览器 localStorage 中，清除浏览器数据会导致存档丢失
+   建议使用游戏内「导出存档」功能备份

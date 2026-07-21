@@ -191,7 +191,8 @@ export class AcquireCompetitorCommand implements Command {
       if (!draft.resourceMeta[modelId]) {
         draft.resourceMeta[modelId] = [];
       }
-      const pool = draft.resourceMeta[modelId] as CardInstance[];
+      const rawPool = draft.resourceMeta[modelId];
+      const pool: CardInstance[] = Array.isArray(rawPool) ? rawPool : [];
       for (let i = 0; i < totalCards; i++) {
         const nodeId = nodeIds[Math.floor(i / cardsPerNode)];
         const uid = `card-acq-${comp.id}-${draft.date}-${i}`;
@@ -535,12 +536,14 @@ export class HackParametersCommand implements Command {
           rawCapabilities: discountedCaps,
           baseScore: stolenScore,
           daysSincePublished: 0,
+          publishedAt: -1,
           evaluationResearchers: 0,
           published: false,
           version: 1,
           audited: false,
           usedInResearch: false,
           noiseSeed: Math.floor(Math.random() * 2147483647),
+          postTraining: [],
         };
         draft.models.push(newModel);
       });

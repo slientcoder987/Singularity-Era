@@ -1,0 +1,4413 @@
+{
+  "finalDay": 550,
+  "funds": 920636266.4485116,
+  "employees": 31,
+  "researchers": 10,
+  "cardsInstalled": 574,
+  "cardsTotal": 704,
+  "models": [
+    {
+      "name": "Genesis-7B",
+      "params": 7,
+      "baseScore": 659.8506422478279,
+      "postTraining": [],
+      "capabilities": {
+        "dialogue_fluency": 680.4920841040334,
+        "world_knowledge": 173.79239909010408,
+        "math_reasoning": 80.23016886415103,
+        "coding_agent": 29.582910076763262,
+        "multilingual": 22.274778128046165,
+        "multimodal": 0.003795247029994955,
+        "hallucination_rate": 664.1910674401913,
+        "self_correction": 0.020233226658041246,
+        "research_taste": 2.2528422453522836,
+        "pragmatic_inference": 7.723480195930952,
+        "creative_writing": 18.15314518881116,
+        "long_range_coherence": 1.948880207012661,
+        "metacognition": 2.660678373243472,
+        "sycophancy": 82.6765326302737,
+        "eval_awareness": 14.416856723813517,
+        "rsi_potential": 0.06953824254741445
+      }
+    },
+    {
+      "name": "Nova-13B",
+      "params": 13,
+      "baseScore": 716.2716577936858,
+      "postTraining": [],
+      "capabilities": {
+        "dialogue_fluency": 738.6780613507553,
+        "world_knowledge": 275.90237512897676,
+        "math_reasoning": 127.36859760559338,
+        "coding_agent": 46.96405134021007,
+        "multilingual": 35.36209997200543,
+        "multimodal": 0.006025106248944281,
+        "hallucination_rate": 720.9832142414796,
+        "self_correction": 0.03212105547022384,
+        "research_taste": 3.5764770469699165,
+        "pragmatic_inference": 12.261333300394634,
+        "creative_writing": 28.81884305571653,
+        "long_range_coherence": 3.0939251703284785,
+        "metacognition": 4.223933189687905,
+        "sycophancy": 131.25229779637533,
+        "eval_awareness": 22.887335883614043,
+        "rsi_potential": 0.11039473752347195
+      }
+    },
+    {
+      "name": "Titan-30B",
+      "params": 30,
+      "baseScore": 841.8597206201414,
+      "postTraining": [
+        null
+      ],
+      "capabilities": {
+        "dialogue_fluency": 916.9592306095786,
+        "world_knowledge": 1090.0935764977783,
+        "math_reasoning": 346.0208185398758,
+        "coding_agent": 127.58670341185073,
+        "multilingual": 240.63009022893138,
+        "multimodal": 0.016368337527788417,
+        "hallucination_rate": 847.3973815783364,
+        "self_correction": 0.08726290557574218,
+        "research_taste": 9.716174461728242,
+        "pragmatic_inference": 33.310224535332914,
+        "creative_writing": 72.61801342272683,
+        "long_range_coherence": 8.405231274142338,
+        "metacognition": 11.475111190902918,
+        "sycophancy": 356.57162261749556,
+        "eval_awareness": 62.17776473576731,
+        "rsi_potential": 0.29990812616664086
+      }
+    }
+  ],
+  "techMaturity": {
+    "pretraining": 100,
+    "flash_attention": 40.4060083227781,
+    "zero_1": 43.47146583610908,
+    "rmsnorm": 41.44638259147382,
+    "flash_attention_2": 43.17153410262711,
+    "pipeline_parallel": 40.44566636042106,
+    "tensor_parallel": 94.16663261392098,
+    "pre_ln": 44.06707997315729,
+    "rope": 41.75099479996341,
+    "swiglu": 46.632046761479856,
+    "moe": 59.155524938460815,
+    "sft": 40.73647596728718,
+    "rlhf": 41.939847399688446,
+    "cot_training": 41.69431511020331,
+    "dpo": 42.817238457055275,
+    "data_cleaning_v1": 41.2879330976018,
+    "data_deduplication": 45.21122438059975,
+    "stable_training": 41.2344880242614,
+    "data_curation": 41.854421338659996,
+    "gradient_clipping": 45.38544471855776,
+    "quantization": 45.276567446724115,
+    "context_parallel": 33.46640106136302,
+    "expert_parallel": 25.45875386086578
+  },
+  "trainingProjects": 3,
+  "cmdCoverage": [
+    "SetHeadquartersCommand",
+    "RequestRecruitmentCommand",
+    "RaiseFundingCommand",
+    "SetTokenPricingCommand",
+    "HireCandidateCommand",
+    "CleanupCandidatesCommand",
+    "StartExperimentCommand",
+    "StartTrainingCommand",
+    "PurchaseHardwareCommand",
+    "PublishModelCommand",
+    "BuyServerNodeCommand",
+    "InstallCardCommand",
+    "TeamBuildingCommand",
+    "GiveBonusCommand",
+    "SwitchManagementModeCommand",
+    "AppointExecutiveCommand",
+    "BuildDataCenterCommand",
+    "BuyGridPowerCommand",
+    "EnterRegionCommand",
+    "PublishInRegionCommand",
+    "StartStaffTrainingCommand",
+    "AcquireDataCommand",
+    "CreateDatasetCommand",
+    "BuildPowerPlantCommand",
+    "AddNodeToClusterCommand",
+    "CreateClusterCommand",
+    "AddPostTrainingStage(直接state)",
+    "ConductAuditCommand",
+    "PurgeDatasetCommand",
+    "DedupDatasetCommand",
+    "PolishTechCommand"
+  ],
+  "eventCounts": {
+    "HEADQUARTERS_SET": 1,
+    "RECRUITMENT_REQUESTED": 21,
+    "FUNDING_COMPLETED": 4,
+    "TOKEN_PRICING_UPDATED": 2,
+    "DAY_START": 550,
+    "GRID_PURCHASE": 219,
+    "POWER_BALANCE": 550,
+    "INFRA_MAINTENANCE": 550,
+    "MISSION_OFFERED": 3,
+    "OPEN_SOURCE_PUBLISHED": 23,
+    "SMALL_COMPANY_REFRESHED": 40,
+    "DAY_END": 550,
+    "EMPLOYEE_HIRED": 41,
+    "EXPERIMENT_STARTED": 598,
+    "IDEA_GENERATED": 19,
+    "EMPLOYEE_RESIGNED": 18,
+    "TRAINING_STARTED": 3,
+    "EXPERIMENT_COMPLETED": 598,
+    "TRAINING_PROGRESS": 61,
+    "PURCHASE_ORDERED": 6,
+    "SALARY_PAID": 18,
+    "PERFORMANCE_EVALUATED": 18,
+    "TRAINING_COMPLETED": 3,
+    "PLAYER_MODEL_RELEASED": 3,
+    "TRAINING_EVENT": 2,
+    "MODEL_PUBLISHED": 3,
+    "HARDWARE_DELIVERED": 6,
+    "COMPUTE_POWER_CHANGED": 6,
+    "NODE_BUILT": 84,
+    "CARD_INSTALLED": 542,
+    "HIRE_REJECTED": 124,
+    "RECRUITMENT_REJECTED": 3,
+    "TEAM_BUILDING_COMPLETED": 9,
+    "BONUS_GIVEN": 10,
+    "MANAGEMENT_MODE_SWITCH_FAILED": 1,
+    "EXECUTIVE_APPOINT_FAILED": 1,
+    "DC_REJECTED": 3,
+    "GRID_POWER_REJECTED": 1,
+    "NODE_FAILED": 28,
+    "CARD_RECOVERED": 198,
+    "CARD_FAILED": 36,
+    "TEAM_BUILDING_REJECTED": 1,
+    "STAFF_TRAINING_REJECTED": 1,
+    "DATA_ACQUIRE_REJECTED": 1,
+    "DATASET_CREATED": 1,
+    "TRAINING_CRASH": 3,
+    "COMPETITOR_RELEASE": 34,
+    "COMPETITOR_MERGER": 5,
+    "INDUSTRY_PANIC": 5,
+    "POWER_PLANT_BUILT": 2,
+    "NODE_ADDED_TO_CLUSTER": 12,
+    "CLUSTER_ADD_NODE_REJECTED": 16,
+    "CLUSTER_CREATED": 3,
+    "POST_TRAINING_STARTED": 1,
+    "AUDIT_REJECTED": 1,
+    "DATA_PURGE_REJECTED": 1,
+    "TRAINING_REJECTED": 2,
+    "DATA_DEDUPED": 1,
+    "NETWORK_GLITCH": 1,
+    "TECH_POLISHED": 42
+  },
+  "rejectedLog": [
+    {
+      "day": 39,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 39,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 39,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 39,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 39,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 39,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 59,
+      "event": "RECRUITMENT_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 59,
+      "event": "RECRUITMENT_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 62,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 62,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 62,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 62,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 62,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 62,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 69,
+      "event": "MANAGEMENT_MODE_SWITCH_FAILED",
+      "payload": "{\"reason\":\"same_mode\",\"target\":\"flat\"}"
+    },
+    {
+      "day": 69,
+      "event": "EXECUTIVE_APPOINT_FAILED",
+      "payload": "{\"role\":\"ceo\",\"reason\":\"level_too_low\",\"required\":8,\"actual\":5}"
+    },
+    {
+      "day": 79,
+      "event": "DC_REJECTED",
+      "payload": "{\"reason\":\"未知地点\"}"
+    },
+    {
+      "day": 79,
+      "event": "GRID_POWER_REJECTED",
+      "payload": "{\"reason\":\"超出地区电网容量上限（已购 0 kW，上限 1475 kW）\",\"cap\":1475,\"bought\":0}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 99,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 114,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uf6j-8j8uvo\""
+    },
+    {
+      "day": 124,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535883-bnv3c3-27\""
+    },
+    {
+      "day": 136,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535606-e5rjih-10\""
+    },
+    {
+      "day": 139,
+      "event": "TEAM_BUILDING_REJECTED",
+      "payload": "{\"reason\":\"冷却中，剩余 10 天\"}"
+    },
+    {
+      "day": 139,
+      "event": "STAFF_TRAINING_REJECTED",
+      "payload": "{\"reason\":\"未知培训类型\"}"
+    },
+    {
+      "day": 149,
+      "event": "DATA_ACQUIRE_REJECTED",
+      "payload": "{\"reason\":\"未知数据获取路线\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 150,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 155,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-init-5\""
+    },
+    {
+      "day": 192,
+      "event": "NODE_FAILED",
+      "payload": "\"node-initial-1\""
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 199,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 202,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 219,
+      "event": "DC_REJECTED",
+      "payload": "{\"reason\":\"未知地点\"}"
+    },
+    {
+      "day": 224,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5ufnw-mznc8t\""
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 227,
+      "event": "CLUSTER_ADD_NODE_REJECTED",
+      "payload": "{\"reason\":\"集群已满\"}"
+    },
+    {
+      "day": 229,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-init-20\""
+    },
+    {
+      "day": 234,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535883-xfhy6f-6\""
+    },
+    {
+      "day": 234,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-zepu1z-121\""
+    },
+    {
+      "day": 235,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-9kfg7o-78\""
+    },
+    {
+      "day": 239,
+      "event": "NODE_FAILED",
+      "payload": "\"node-initial-1\""
+    },
+    {
+      "day": 240,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-pgxc7b-65\""
+    },
+    {
+      "day": 248,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5ueyr-tykfzg\""
+    },
+    {
+      "day": 257,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uf6i-364a3w\""
+    },
+    {
+      "day": 259,
+      "event": "AUDIT_REJECTED",
+      "payload": "{\"reason\":\"需要对齐v1技术\"}"
+    },
+    {
+      "day": 264,
+      "event": "DATA_PURGE_REJECTED",
+      "payload": "{\"reason\":\"领域 general 不存在\"}"
+    },
+    {
+      "day": 279,
+      "event": "TRAINING_REJECTED",
+      "payload": "{\"reason\":\"集群内无在线GPU，请先安装计算卡\",\"issues\":[{\"severity\":\"blocker\",\"category\":\"gpu_count\",\"message\":\"集群内无在线GPU，请先安装计算卡\"}]}"
+    },
+    {
+      "day": 286,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-f7psr6-21\""
+    },
+    {
+      "day": 286,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uf6i-zknk3v\""
+    },
+    {
+      "day": 289,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-xjdgq5-29\""
+    },
+    {
+      "day": 315,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535883-14m9tl-1\""
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 319,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 329,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-22voo2-80\""
+    },
+    {
+      "day": 338,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608537280-chv6fo-62\""
+    },
+    {
+      "day": 360,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-8s8h5o-84\""
+    },
+    {
+      "day": 364,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-utqwk6-27\""
+    },
+    {
+      "day": 369,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608537280-r2eu0u-6\""
+    },
+    {
+      "day": 374,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-yo2kdl-111\""
+    },
+    {
+      "day": 374,
+      "event": "NODE_FAILED",
+      "payload": "\"node-initial-2\""
+    },
+    {
+      "day": 377,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-xjw1hm-97\""
+    },
+    {
+      "day": 389,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-yo2kdl-111\""
+    },
+    {
+      "day": 392,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5ug75-1xwo3z\""
+    },
+    {
+      "day": 399,
+      "event": "RECRUITMENT_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 402,
+      "event": "HIRE_REJECTED",
+      "payload": "{\"reason\":\"核心员工已达上限（10人）\"}"
+    },
+    {
+      "day": 405,
+      "event": "NODE_FAILED",
+      "payload": "\"node-initial-1\""
+    },
+    {
+      "day": 407,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535883-8lkbnn-46\""
+    },
+    {
+      "day": 419,
+      "event": "DC_REJECTED",
+      "payload": "{\"reason\":\"未知地点\"}"
+    },
+    {
+      "day": 426,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-40vyka-37\""
+    },
+    {
+      "day": 428,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uf6j-9qwqnb\""
+    },
+    {
+      "day": 439,
+      "event": "TRAINING_REJECTED",
+      "payload": "{\"reason\":\"集群内无在线GPU，请先安装计算卡\",\"issues\":[{\"severity\":\"blocker\",\"category\":\"gpu_count\",\"message\":\"集群内无在线GPU，请先安装计算卡\"}]}"
+    },
+    {
+      "day": 439,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-init-17\""
+    },
+    {
+      "day": 439,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5ufnx-sn70g2\""
+    },
+    {
+      "day": 456,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608537280-04z6ly-13\""
+    },
+    {
+      "day": 459,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uhsz-rd1u0z\""
+    },
+    {
+      "day": 466,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-lrpc0n-85\""
+    },
+    {
+      "day": 468,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5ufnw-mznc8t\""
+    },
+    {
+      "day": 470,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uhah-kp87r4\""
+    },
+    {
+      "day": 481,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535883-3eaaek-0\""
+    },
+    {
+      "day": 483,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uhak-t4jpwt\""
+    },
+    {
+      "day": 485,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uf6i-364a3w\""
+    },
+    {
+      "day": 488,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608538584-pmwqbw-98\""
+    },
+    {
+      "day": 493,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535883-6ww9d0-3\""
+    },
+    {
+      "day": 496,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535883-mpny1n-42\""
+    },
+    {
+      "day": 497,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608538584-rircy8-62\""
+    },
+    {
+      "day": 497,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uhai-dl78oo\""
+    },
+    {
+      "day": 500,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535606-rv8lvj-12\""
+    },
+    {
+      "day": 501,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608538584-akoj7p-125\""
+    },
+    {
+      "day": 504,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-j34kiy-47\""
+    },
+    {
+      "day": 506,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608536502-m41tz5-74\""
+    },
+    {
+      "day": 521,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5ufnx-wwm6zk\""
+    },
+    {
+      "day": 527,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5ufnw-c3sncw\""
+    },
+    {
+      "day": 529,
+      "event": "NODE_FAILED",
+      "payload": "\"node-initial-0\""
+    },
+    {
+      "day": 529,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uhai-dl78oo\""
+    },
+    {
+      "day": 530,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608538584-i7z62w-205\""
+    },
+    {
+      "day": 532,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535606-l2ky1p-17\""
+    },
+    {
+      "day": 532,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uham-yssskq\""
+    },
+    {
+      "day": 533,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uhai-63huck\""
+    },
+    {
+      "day": 533,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uhai-dl78oo\""
+    },
+    {
+      "day": 537,
+      "event": "CARD_FAILED",
+      "payload": "\"compute_h100-1784608535883-9y9h8s-12\""
+    },
+    {
+      "day": 538,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uf6j-9qwqnb\""
+    },
+    {
+      "day": 545,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uf6i-364a3w\""
+    },
+    {
+      "day": 545,
+      "event": "NODE_FAILED",
+      "payload": "\"node-mru5uhsy-b125xq\""
+    }
+  ],
+  "issues": [],
+  "opLogCount": 1554,
+  "opLog": [
+    {
+      "day": 0,
+      "op": "SetHeadquartersCommand",
+      "detail": "总部=美国西海岸, 预设=均衡起步"
+    },
+    {
+      "day": 0,
+      "op": "INIT",
+      "detail": "游戏开始，总部=美国西海岸"
+    },
+    {
+      "day": 0,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 0,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 0,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 data_engineer via job_site"
+    },
+    {
+      "day": 0,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 system_engineer via job_site"
+    },
+    {
+      "day": 0,
+      "op": "RaiseFundingCommand",
+      "detail": "融资 seed 红杉资本"
+    },
+    {
+      "day": 0,
+      "op": "SetTokenPricingCommand",
+      "detail": "定价 $2/M alloc=0.3"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Johnson(researcher Lv3)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Patricia Anderson(researcher Lv2)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Linda Lee(researcher Lv3)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Emily Davis(researcher Lv2)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Rodriguez(researcher Lv2)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Taylor(researcher Lv2)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Michael Jones(data_engineer Lv3)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Matthew Hernandez(data_engineer Lv4)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Elizabeth Anderson(data_engineer Lv3)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Michael Brown(system_engineer Lv3)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 John Lee(system_engineer Lv4)"
+    },
+    {
+      "day": 2,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Matthew Davis(system_engineer Lv4)"
+    },
+    {
+      "day": 2,
+      "op": "CleanupCandidatesCommand",
+      "detail": ""
+    },
+    {
+      "day": 3,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention 7B ratio=0.1"
+    },
+    {
+      "day": 3,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 3,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rmsnorm 7B ratio=0.1"
+    },
+    {
+      "day": 19,
+      "op": "StartTrainingCommand",
+      "detail": "训练 Genesis-7B 7B transformer (集群4节点 bw600)"
+    },
+    {
+      "day": 20,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention 7B ratio=0.1"
+    },
+    {
+      "day": 20,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 20,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 29,
+      "op": "PurchaseHardwareCommand",
+      "detail": "采购 32× compute_h100"
+    },
+    {
+      "day": 36,
+      "op": "PublishModelCommand",
+      "detail": "发布模型 train-mru5uevi-p7af32-model"
+    },
+    {
+      "day": 37,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention 7B ratio=0.1"
+    },
+    {
+      "day": 37,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 37,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 39,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 39,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 39,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 39,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-ws8ytv-0→node-mru5ueyr-jhmn3m"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-eqytii-1→node-mru5ueyr-jhmn3m"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-xx2fcu-2→node-mru5ueyr-jhmn3m"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-7q7xf3-3→node-mru5ueyr-jhmn3m"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-h93l0y-4→node-mru5ueyr-jhmn3m"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-bx24dx-5→node-mru5ueyr-jhmn3m"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-gnma5c-6→node-mru5ueyr-jhmn3m"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-q4ykcl-7→node-mru5ueyr-jhmn3m"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-2sdu3u-8→node-mru5ueyr-tykfzg"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-lbd3ix-9→node-mru5ueyr-tykfzg"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-e5rjih-10→node-mru5ueyr-tykfzg"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-p8taot-11→node-mru5ueyr-tykfzg"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-rv8lvj-12→node-mru5ueyr-tykfzg"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-xf4aya-13→node-mru5ueyr-tykfzg"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-vauixq-14→node-mru5ueyr-tykfzg"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-a6bqd5-15→node-mru5ueyr-tykfzg"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-tw9vo7-16→node-mru5ueyr-yhvl0q"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-l2ky1p-17→node-mru5ueyr-yhvl0q"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-x6ghb0-18→node-mru5ueyr-yhvl0q"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-qppvxa-19→node-mru5ueyr-yhvl0q"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-096bvq-20→node-mru5ueyr-yhvl0q"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-zh1z5o-21→node-mru5ueyr-yhvl0q"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-89nd1c-22→node-mru5ueyr-yhvl0q"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-m3z5km-23→node-mru5ueyr-yhvl0q"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-0a3bhc-24→node-mru5ueyr-762snj"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-n5j51h-25→node-mru5ueyr-762snj"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-hrf68c-26→node-mru5ueyr-762snj"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-th4doi-27→node-mru5ueyr-762snj"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-789ik3-28→node-mru5ueyr-762snj"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-7pj68q-29→node-mru5ueyr-762snj"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-j06zt3-30→node-mru5ueyr-762snj"
+    },
+    {
+      "day": 39,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535606-c0zup8-31→node-mru5ueyr-762snj"
+    },
+    {
+      "day": 39,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 39,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 39,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jennifer Garcia(researcher Lv2)"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Matthew Davis(researcher Lv4)"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 William Davis(researcher Lv3)"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Daniel Jackson(researcher Lv2)"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Davis(researcher Lv3)"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jennifer Taylor(researcher Lv4)"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jennifer Lee(researcher Lv2)"
+    },
+    {
+      "day": 39,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Moore(researcher Lv4)"
+    },
+    {
+      "day": 39,
+      "op": "CleanupCandidatesCommand",
+      "detail": ""
+    },
+    {
+      "day": 46,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention 7B ratio=0.1"
+    },
+    {
+      "day": 46,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 46,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 55,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention 7B ratio=0.1"
+    },
+    {
+      "day": 55,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 55,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 59,
+      "op": "RaiseFundingCommand",
+      "detail": "融资 venture_capital a16z"
+    },
+    {
+      "day": 59,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via headhunter"
+    },
+    {
+      "day": 59,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 59,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 product_manager via job_site"
+    },
+    {
+      "day": 59,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 manager via job_site"
+    },
+    {
+      "day": 59,
+      "op": "TeamBuildingCommand",
+      "detail": "团建"
+    },
+    {
+      "day": 59,
+      "op": "GiveBonusCommand",
+      "detail": "发奖金 emp-mru5uetk-j83uqt"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Daniel Jackson(researcher Lv2)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Davis(researcher Lv3)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jennifer Taylor(researcher Lv4)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jennifer Lee(researcher Lv2)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Moore(researcher Lv4)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Linda Smith(product_manager Lv3)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Emily Thompson(product_manager Lv4)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Thomas Hernandez(product_manager Lv2)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Robert Garcia(manager Lv4)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Mary Miller(manager Lv2)"
+    },
+    {
+      "day": 62,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Mary Martin(manager Lv4)"
+    },
+    {
+      "day": 62,
+      "op": "CleanupCandidatesCommand",
+      "detail": ""
+    },
+    {
+      "day": 64,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 64,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 64,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pipeline_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 69,
+      "op": "SwitchManagementModeCommand",
+      "detail": "切换管理模式 flat"
+    },
+    {
+      "day": 69,
+      "op": "AppointExecutiveCommand",
+      "detail": "任命 ceo=emp-init-7"
+    },
+    {
+      "day": 73,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 73,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 79,
+      "op": "BuildDataCenterCommand",
+      "detail": "建DC us-west 5MW air"
+    },
+    {
+      "day": 79,
+      "op": "BuyGridPowerCommand",
+      "detail": "购电 2000kW"
+    },
+    {
+      "day": 82,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 82,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 89,
+      "op": "PurchaseHardwareCommand",
+      "detail": "采购 64× compute_h100"
+    },
+    {
+      "day": 91,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 91,
+      "op": "StartExperimentCommand",
+      "detail": "实验 zero_1 7B ratio=0.1"
+    },
+    {
+      "day": 95,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pipeline_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 98,
+      "op": "StartExperimentCommand",
+      "detail": "实验 flash_attention_2 7B ratio=0.1"
+    },
+    {
+      "day": 98,
+      "op": "StartExperimentCommand",
+      "detail": "实验 tensor_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 99,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 99,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 99,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Daniel Jackson(researcher Lv2)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Davis(researcher Lv3)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jennifer Taylor(researcher Lv4)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jennifer Lee(researcher Lv2)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Moore(researcher Lv4)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 William Lee(researcher Lv3)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 John Taylor(researcher Lv3)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Matthew Wilson(researcher Lv4)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Thomas Jones(researcher Lv4)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Johnson(researcher Lv3)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Jackson(researcher Lv2)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Daniel Moore(researcher Lv2)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Mary Williams(researcher Lv3)"
+    },
+    {
+      "day": 99,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 99,
+      "op": "CleanupCandidatesCommand",
+      "detail": ""
+    },
+    {
+      "day": 99,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 99,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 99,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 99,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 99,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 99,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 99,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 99,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-3eaaek-0→node-mru5uf6i-ctwmix"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-14m9tl-1→node-mru5uf6i-ctwmix"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-k83g7b-2→node-mru5uf6i-ctwmix"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-6ww9d0-3→node-mru5uf6i-ctwmix"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-0iqmxu-4→node-mru5uf6i-ctwmix"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-47kadq-5→node-mru5uf6i-ctwmix"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-xfhy6f-6→node-mru5uf6i-ctwmix"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-vr2pog-7→node-mru5uf6i-ctwmix"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-imb445-8→node-mru5uf6i-364a3w"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-yd2dd9-9→node-mru5uf6i-364a3w"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-plfo8r-10→node-mru5uf6i-364a3w"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-8ou7l2-11→node-mru5uf6i-364a3w"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-9y9h8s-12→node-mru5uf6i-364a3w"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-otkjbd-13→node-mru5uf6i-364a3w"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-j7ip41-14→node-mru5uf6i-364a3w"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-qhe2p9-15→node-mru5uf6i-364a3w"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-dpav51-16→node-mru5uf6i-zknk3v"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-e1qi74-17→node-mru5uf6i-zknk3v"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-0qrrql-18→node-mru5uf6i-zknk3v"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-wthjbq-19→node-mru5uf6i-zknk3v"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-curxlg-20→node-mru5uf6i-zknk3v"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-fxml1f-21→node-mru5uf6i-zknk3v"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-h6snz3-22→node-mru5uf6i-zknk3v"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-gui7ue-23→node-mru5uf6i-zknk3v"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-zjtlxv-24→node-mru5uf6i-8vl7x3"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-7atk48-25→node-mru5uf6i-8vl7x3"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-fcyvtf-26→node-mru5uf6i-8vl7x3"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-bnv3c3-27→node-mru5uf6i-8vl7x3"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-nlb6zb-28→node-mru5uf6i-8vl7x3"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-dg4csb-29→node-mru5uf6i-8vl7x3"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-o1gciu-30→node-mru5uf6i-8vl7x3"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-fo5h5o-31→node-mru5uf6i-8vl7x3"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-228ggx-32→node-mru5uf6j-uotl64"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-5fcnem-33→node-mru5uf6j-uotl64"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-bkav0j-34→node-mru5uf6j-uotl64"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-x4ovbb-35→node-mru5uf6j-uotl64"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-gb9tld-36→node-mru5uf6j-uotl64"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-x9m9hd-37→node-mru5uf6j-uotl64"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-jxytou-38→node-mru5uf6j-uotl64"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-fypyhy-39→node-mru5uf6j-uotl64"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-wvrpd6-40→node-mru5uf6j-8j8uvo"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-hkyd6q-41→node-mru5uf6j-8j8uvo"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-mpny1n-42→node-mru5uf6j-8j8uvo"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-nqm1wh-43→node-mru5uf6j-8j8uvo"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-s9mdu4-44→node-mru5uf6j-8j8uvo"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-jlcc7a-45→node-mru5uf6j-8j8uvo"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-8lkbnn-46→node-mru5uf6j-8j8uvo"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-aa9prv-47→node-mru5uf6j-8j8uvo"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-oeb40o-48→node-mru5uf6j-woqnop"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-6b1kms-49→node-mru5uf6j-woqnop"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-du7wn1-50→node-mru5uf6j-woqnop"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-jnl5gd-51→node-mru5uf6j-woqnop"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-5kqhky-52→node-mru5uf6j-woqnop"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-5deilz-53→node-mru5uf6j-woqnop"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-ok909q-54→node-mru5uf6j-woqnop"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-w08ec3-55→node-mru5uf6j-woqnop"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-gweykv-56→node-mru5uf6j-9qwqnb"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-8eu2zl-57→node-mru5uf6j-9qwqnb"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-v6e7k5-58→node-mru5uf6j-9qwqnb"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-sdztbd-59→node-mru5uf6j-9qwqnb"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-i47xon-60→node-mru5uf6j-9qwqnb"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-7oqz8c-61→node-mru5uf6j-9qwqnb"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-tdadcj-62→node-mru5uf6j-9qwqnb"
+    },
+    {
+      "day": 99,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608535883-futahp-63→node-mru5uf6j-9qwqnb"
+    },
+    {
+      "day": 103,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rmsnorm 7B ratio=0.1"
+    },
+    {
+      "day": 108,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rmsnorm 7B ratio=0.1"
+    },
+    {
+      "day": 109,
+      "op": "EnterRegionCommand",
+      "detail": "进入地区 eu-west"
+    },
+    {
+      "day": 111,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pipeline_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 113,
+      "op": "StartExperimentCommand",
+      "detail": "实验 tensor_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 113,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rmsnorm 7B ratio=0.1"
+    },
+    {
+      "day": 118,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rmsnorm 7B ratio=0.1"
+    },
+    {
+      "day": 119,
+      "op": "PublishInRegionCommand",
+      "detail": "地区发布 eu-west"
+    },
+    {
+      "day": 119,
+      "op": "TeamBuildingCommand",
+      "detail": "团建"
+    },
+    {
+      "day": 119,
+      "op": "GiveBonusCommand",
+      "detail": "发奖金 emp-init-5"
+    },
+    {
+      "day": 123,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rmsnorm 7B ratio=0.1"
+    },
+    {
+      "day": 127,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pipeline_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 128,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pre_ln 7B ratio=0.1"
+    },
+    {
+      "day": 129,
+      "op": "StartExperimentCommand",
+      "detail": "实验 tensor_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 129,
+      "op": "StartTrainingCommand",
+      "detail": "训练 Nova-13B 13B transformer (集群4节点 bw600)"
+    },
+    {
+      "day": 133,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pre_ln 7B ratio=0.1"
+    },
+    {
+      "day": 138,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pre_ln 7B ratio=0.1"
+    },
+    {
+      "day": 139,
+      "op": "TeamBuildingCommand",
+      "detail": "团建"
+    },
+    {
+      "day": 139,
+      "op": "GiveBonusCommand",
+      "detail": "发奖金 emp-init-3"
+    },
+    {
+      "day": 139,
+      "op": "StartStaffTrainingCommand",
+      "detail": "员工培训 course"
+    },
+    {
+      "day": 143,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pipeline_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 143,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pre_ln 7B ratio=0.1"
+    },
+    {
+      "day": 145,
+      "op": "StartExperimentCommand",
+      "detail": "实验 tensor_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 148,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pre_ln 7B ratio=0.1"
+    },
+    {
+      "day": 149,
+      "op": "AcquireDataCommand",
+      "detail": "获取数据 web_crawl"
+    },
+    {
+      "day": 149,
+      "op": "CreateDatasetCommand",
+      "detail": "建数据集 高质量语料-v2"
+    },
+    {
+      "day": 150,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 150,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 150,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Moore(researcher Lv4)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 William Lee(researcher Lv3)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 John Taylor(researcher Lv3)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Matthew Wilson(researcher Lv4)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Thomas Jones(researcher Lv4)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Johnson(researcher Lv3)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Jackson(researcher Lv2)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Daniel Moore(researcher Lv2)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Mary Williams(researcher Lv3)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Christopher Anderson(researcher Lv3)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Sarah Jones(researcher Lv2)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Emily Brown(researcher Lv2)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Moore(researcher Lv3)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Matthew Thompson(researcher Lv3)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Garcia(researcher Lv2)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Hernandez(researcher Lv2)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 David Brown(researcher Lv4)"
+    },
+    {
+      "day": 150,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Robert Jones(researcher Lv4)"
+    },
+    {
+      "day": 150,
+      "op": "CleanupCandidatesCommand",
+      "detail": ""
+    },
+    {
+      "day": 153,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pre_ln 7B ratio=0.1"
+    },
+    {
+      "day": 158,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pre_ln 7B ratio=0.1"
+    },
+    {
+      "day": 159,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pipeline_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 159,
+      "op": "PublishModelCommand",
+      "detail": "发布模型 train-mru5ufbb-6g2x4z-model"
+    },
+    {
+      "day": 161,
+      "op": "StartExperimentCommand",
+      "detail": "实验 tensor_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 163,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rope 7B ratio=0.1"
+    },
+    {
+      "day": 168,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rope 7B ratio=0.1"
+    },
+    {
+      "day": 173,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rope 7B ratio=0.1"
+    },
+    {
+      "day": 175,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pipeline_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 177,
+      "op": "StartExperimentCommand",
+      "detail": "实验 tensor_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 178,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rope 7B ratio=0.1"
+    },
+    {
+      "day": 179,
+      "op": "TeamBuildingCommand",
+      "detail": "团建"
+    },
+    {
+      "day": 179,
+      "op": "GiveBonusCommand",
+      "detail": "发奖金 emp-init-3"
+    },
+    {
+      "day": 183,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rope 7B ratio=0.1"
+    },
+    {
+      "day": 188,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rope 7B ratio=0.1"
+    },
+    {
+      "day": 191,
+      "op": "StartExperimentCommand",
+      "detail": "实验 pipeline_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 193,
+      "op": "StartExperimentCommand",
+      "detail": "实验 tensor_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 193,
+      "op": "StartExperimentCommand",
+      "detail": "实验 rope 7B ratio=0.1"
+    },
+    {
+      "day": 198,
+      "op": "StartExperimentCommand",
+      "detail": "实验 swiglu 7B ratio=0.1"
+    },
+    {
+      "day": 199,
+      "op": "RaiseFundingCommand",
+      "detail": "融资 venture_capital Sequoia"
+    },
+    {
+      "day": 199,
+      "op": "PurchaseHardwareCommand",
+      "detail": "采购 128× compute_h100"
+    },
+    {
+      "day": 199,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via headhunter"
+    },
+    {
+      "day": 199,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 legal_pr via job_site"
+    },
+    {
+      "day": 199,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 199,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 199,
+      "op": "RequestRecruitmentCommand",
+      "detail": "招聘 researcher via job_site"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Johnson(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Jackson(researcher Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Daniel Moore(researcher Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Mary Williams(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Christopher Anderson(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Sarah Jones(researcher Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Emily Brown(researcher Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Moore(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Matthew Thompson(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Garcia(researcher Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Hernandez(researcher Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 David Brown(researcher Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Robert Jones(researcher Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Brown(researcher Lv6)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Brown(researcher Lv5)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Garcia(researcher Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Patricia Martin(legal_pr Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jennifer Martin(legal_pr Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Robert Garcia(legal_pr Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Elizabeth Wilson(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Sarah Wilson(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Sarah Martinez(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Garcia(researcher Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Moore(researcher Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 William Williams(researcher Lv2)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Christopher Jackson(researcher Lv3)"
+    },
+    {
+      "day": 199,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Thomas Davis(researcher Lv4)"
+    },
+    {
+      "day": 199,
+      "op": "CleanupCandidatesCommand",
+      "detail": ""
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Christopher Anderson(researcher Lv3)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Sarah Jones(researcher Lv2)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Emily Brown(researcher Lv2)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Moore(researcher Lv3)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Matthew Thompson(researcher Lv3)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Barbara Garcia(researcher Lv2)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Hernandez(researcher Lv2)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 David Brown(researcher Lv4)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Robert Jones(researcher Lv4)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Brown(researcher Lv6)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Brown(researcher Lv5)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Garcia(researcher Lv4)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Elizabeth Wilson(researcher Lv3)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Sarah Wilson(researcher Lv3)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Sarah Martinez(researcher Lv3)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Susan Garcia(researcher Lv2)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Jessica Moore(researcher Lv4)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 James Hernandez(researcher Lv4)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 William Williams(researcher Lv2)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Christopher Jackson(researcher Lv3)"
+    },
+    {
+      "day": 202,
+      "op": "HireCandidateCommand",
+      "detail": "录用 Thomas Davis(researcher Lv4)"
+    },
+    {
+      "day": 202,
+      "op": "CleanupCandidatesCommand",
+      "detail": ""
+    },
+    {
+      "day": 203,
+      "op": "StartExperimentCommand",
+      "detail": "实验 swiglu 7B ratio=0.1"
+    },
+    {
+      "day": 207,
+      "op": "StartExperimentCommand",
+      "detail": "实验 swiglu 7B ratio=0.1"
+    },
+    {
+      "day": 207,
+      "op": "StartExperimentCommand",
+      "detail": "实验 moe 7B ratio=0.1"
+    },
+    {
+      "day": 208,
+      "op": "StartExperimentCommand",
+      "detail": "实验 tensor_parallel 13B ratio=0.1"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "BuyServerNodeCommand",
+      "detail": "购买节点 node_8_pcie4"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-yskbw2-0→node-mru5ufnv-gx9ql8"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-rtxyb7-1→node-mru5ufnv-gx9ql8"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-glxd25-2→node-mru5ufnv-gx9ql8"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-23qvgv-3→node-mru5ufnv-gx9ql8"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-2y7lqi-4→node-mru5ufnv-gx9ql8"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-hogilz-5→node-mru5ufnv-gx9ql8"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-njk123-6→node-mru5ufnv-gx9ql8"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-ac5owq-7→node-mru5ufnv-gx9ql8"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-i9qxxp-8→node-mru5ufnw-zcxnmd"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-k3iygc-9→node-mru5ufnw-zcxnmd"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-5bdmrz-10→node-mru5ufnw-zcxnmd"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-vgqdu7-11→node-mru5ufnw-zcxnmd"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-mvfswv-12→node-mru5ufnw-zcxnmd"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-m9n2yj-13→node-mru5ufnw-zcxnmd"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-othuk3-14→node-mru5ufnw-zcxnmd"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-1syr6t-15→node-mru5ufnw-zcxnmd"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-3p7og9-16→node-mru5ufnw-vvigtt"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-bmnr0q-17→node-mru5ufnw-vvigtt"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-8ehdmy-18→node-mru5ufnw-vvigtt"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-n3al34-19→node-mru5ufnw-vvigtt"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-hn2av9-20→node-mru5ufnw-vvigtt"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-f7psr6-21→node-mru5ufnw-vvigtt"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-y32t15-22→node-mru5ufnw-vvigtt"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-bsmdfw-23→node-mru5ufnw-vvigtt"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-gh2yho-24→node-mru5ufnw-gdk9gs"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-8elxye-25→node-mru5ufnw-gdk9gs"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-xl1j7t-26→node-mru5ufnw-gdk9gs"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-utqwk6-27→node-mru5ufnw-gdk9gs"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-f1qlck-28→node-mru5ufnw-gdk9gs"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-xjdgq5-29→node-mru5ufnw-gdk9gs"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-4mg6u0-30→node-mru5ufnw-gdk9gs"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-ag605o-31→node-mru5ufnw-gdk9gs"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-fp89m6-32→node-mru5ufnw-wn38ym"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-lwd2ir-33→node-mru5ufnw-wn38ym"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-pe1kxn-34→node-mru5ufnw-wn38ym"
+    },
+    {
+      "day": 209,
+      "op": "InstallCardCommand",
+      "detail": "装卡 compute_h100-1784608536502-h5lx1l-35→node-mru5ufnw-wn38ym"
+    }
+  ],
+  "metricsSample": [
+    {
+      "day": 1,
+      "funds": 11282385,
+      "cards": 63360,
+      "employees": 8,
+      "researchers": 3,
+      "models": 0,
+      "maxParam": 0,
+      "bestModel": 0,
+      "dailyRevenue": 0,
+      "reputation": 50,
+      "morale": 80,
+      "legalDebt": 0,
+      "techs": 1,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 11,
+      "funds": 11138338,
+      "cards": 63360,
+      "employees": 20,
+      "researchers": 9,
+      "models": 0,
+      "maxParam": 0,
+      "bestModel": 0,
+      "dailyRevenue": 0,
+      "reputation": 49,
+      "morale": 81,
+      "legalDebt": 0,
+      "techs": 1,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 21,
+      "funds": 10990096,
+      "cards": 63360,
+      "employees": 19,
+      "researchers": 8,
+      "models": 0,
+      "maxParam": 0,
+      "bestModel": 0,
+      "dailyRevenue": 0,
+      "reputation": 48,
+      "morale": 82,
+      "legalDebt": 0,
+      "techs": 4,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 1,
+      "research": 3
+    },
+    {
+      "day": 31,
+      "funds": 9943638,
+      "cards": 63360,
+      "employees": 19,
+      "researchers": 8,
+      "models": 0,
+      "maxParam": 0,
+      "bestModel": 0,
+      "dailyRevenue": 0,
+      "reputation": 47,
+      "morale": 83,
+      "legalDebt": 0,
+      "techs": 4,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 1,
+      "research": 3
+    },
+    {
+      "day": 41,
+      "funds": 10623663,
+      "cards": 126720,
+      "employees": 21,
+      "researchers": 10,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 96,
+      "reputation": 46,
+      "morale": 84,
+      "legalDebt": 0,
+      "techs": 5,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 51,
+      "funds": 13305209,
+      "cards": 126720,
+      "employees": 21,
+      "researchers": 10,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 97,
+      "reputation": 46,
+      "morale": 85,
+      "legalDebt": 0,
+      "techs": 5,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 61,
+      "funds": 66616457,
+      "cards": 126720,
+      "employees": 21,
+      "researchers": 10,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 97,
+      "reputation": 46,
+      "morale": 86,
+      "legalDebt": 0,
+      "techs": 5,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 71,
+      "funds": 69394994,
+      "cards": 126720,
+      "employees": 25,
+      "researchers": 8,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 87,
+      "legalDebt": 0,
+      "techs": 5,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 81,
+      "funds": 72260762,
+      "cards": 126720,
+      "employees": 25,
+      "researchers": 8,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 88,
+      "legalDebt": 0,
+      "techs": 5,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 91,
+      "funds": 73213416,
+      "cards": 126720,
+      "employees": 24,
+      "researchers": 7,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 89,
+      "legalDebt": 0,
+      "techs": 5,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 1
+    },
+    {
+      "day": 101,
+      "funds": 76230105,
+      "cards": 253440,
+      "employees": 27,
+      "researchers": 10,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 90,
+      "legalDebt": 0,
+      "techs": 6,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 111,
+      "funds": 82130405,
+      "cards": 253440,
+      "employees": 25,
+      "researchers": 8,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 91,
+      "legalDebt": 0,
+      "techs": 6,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 2
+    },
+    {
+      "day": 121,
+      "funds": 87390153,
+      "cards": 253440,
+      "employees": 25,
+      "researchers": 8,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 92,
+      "legalDebt": 0,
+      "techs": 7,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 131,
+      "funds": 92824647,
+      "cards": 253440,
+      "employees": 25,
+      "researchers": 8,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 93,
+      "legalDebt": 0,
+      "techs": 7,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 1,
+      "research": 3
+    },
+    {
+      "day": 141,
+      "funds": 97182825,
+      "cards": 253440,
+      "employees": 23,
+      "researchers": 6,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 94,
+      "legalDebt": 0,
+      "techs": 8,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 1,
+      "research": 3
+    },
+    {
+      "day": 151,
+      "funds": 101366092,
+      "cards": 253440,
+      "employees": 27,
+      "researchers": 10,
+      "models": 1,
+      "maxParam": 7,
+      "bestModel": 660,
+      "dailyRevenue": 103,
+      "reputation": 46,
+      "morale": 95,
+      "legalDebt": 0,
+      "techs": 8,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 1,
+      "research": 3
+    },
+    {
+      "day": 161,
+      "funds": 106171250,
+      "cards": 253440,
+      "employees": 25,
+      "researchers": 8,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 130,
+      "reputation": 46,
+      "morale": 97,
+      "legalDebt": 0,
+      "techs": 8,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 2
+    },
+    {
+      "day": 171,
+      "funds": 112421746,
+      "cards": 253440,
+      "employees": 25,
+      "researchers": 8,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 130,
+      "reputation": 46,
+      "morale": 98,
+      "legalDebt": 0,
+      "techs": 9,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 181,
+      "funds": 118370639,
+      "cards": 253440,
+      "employees": 23,
+      "researchers": 7,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 130,
+      "reputation": 46,
+      "morale": 99,
+      "legalDebt": 0,
+      "techs": 9,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 191,
+      "funds": 124693038,
+      "cards": 253440,
+      "employees": 22,
+      "researchers": 6,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 130,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 9,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 2
+    },
+    {
+      "day": 201,
+      "funds": 198506763,
+      "cards": 253440,
+      "employees": 29,
+      "researchers": 10,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 129,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 9,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 211,
+      "funds": 205437678,
+      "cards": 506880,
+      "employees": 29,
+      "researchers": 10,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 158,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 11,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 221,
+      "funds": 214175784,
+      "cards": 506880,
+      "employees": 29,
+      "researchers": 10,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 155,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 11,
+      "regions": 1,
+      "clusters": 1,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 231,
+      "funds": 225234622,
+      "cards": 506880,
+      "employees": 29,
+      "researchers": 10,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 153,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 12,
+      "regions": 1,
+      "clusters": 2,
+      "dcs": 1,
+      "training": 1,
+      "research": 1
+    },
+    {
+      "day": 241,
+      "funds": 231140815,
+      "cards": 506880,
+      "employees": 29,
+      "researchers": 10,
+      "models": 2,
+      "maxParam": 13,
+      "bestModel": 716,
+      "dailyRevenue": 148,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 13,
+      "regions": 1,
+      "clusters": 2,
+      "dcs": 1,
+      "training": 1,
+      "research": 2
+    },
+    {
+      "day": 251,
+      "funds": 241599627,
+      "cards": 506880,
+      "employees": 29,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 335,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 14,
+      "regions": 1,
+      "clusters": 2,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 261,
+      "funds": 255531191,
+      "cards": 506880,
+      "employees": 29,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 335,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 15,
+      "regions": 1,
+      "clusters": 2,
+      "dcs": 1,
+      "training": 0,
+      "research": 1
+    },
+    {
+      "day": 271,
+      "funds": 269654506,
+      "cards": 506880,
+      "employees": 29,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 335,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 16,
+      "regions": 1,
+      "clusters": 2,
+      "dcs": 1,
+      "training": 0,
+      "research": 2
+    },
+    {
+      "day": 281,
+      "funds": 280907167,
+      "cards": 506880,
+      "employees": 29,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 335,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 16,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 291,
+      "funds": 294042708,
+      "cards": 633600,
+      "employees": 28,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 335,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 19,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 301,
+      "funds": 307883455,
+      "cards": 633600,
+      "employees": 28,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 335,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 20,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 311,
+      "funds": 322097808,
+      "cards": 633600,
+      "employees": 28,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 428,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 21,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 321,
+      "funds": 336272037,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 418,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 22,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 331,
+      "funds": 350468905,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 412,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 341,
+      "funds": 364658872,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 412,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 351,
+      "funds": 378867404,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 412,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 361,
+      "funds": 392743451,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 412,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 371,
+      "funds": 406870153,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 412,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 381,
+      "funds": 420658180,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 412,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 391,
+      "funds": 434727584,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 370,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 401,
+      "funds": 485510879,
+      "cards": 633600,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 370,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 3
+    },
+    {
+      "day": 411,
+      "funds": 501668723,
+      "cards": 1140480,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 370,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 421,
+      "funds": 525223996,
+      "cards": 1140480,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 370,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 431,
+      "funds": 556971019,
+      "cards": 1140480,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 363,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 3,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 441,
+      "funds": 578679124,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 363,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 451,
+      "funds": 610321966,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 353,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 461,
+      "funds": 642019166,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 483,
+      "reputation": 46,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 471,
+      "funds": 673490519,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 483,
+      "reputation": 45,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 481,
+      "funds": 704373813,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 471,
+      "reputation": 45,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 491,
+      "funds": 735380184,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 471,
+      "reputation": 45,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 501,
+      "funds": 766746123,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 433,
+      "reputation": 44,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 511,
+      "funds": 798628661,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 433,
+      "reputation": 44,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 521,
+      "funds": 830641283,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 410,
+      "reputation": 44,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 531,
+      "funds": 862017630,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 397,
+      "reputation": 43,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    },
+    {
+      "day": 541,
+      "funds": 892307736,
+      "cards": 1393920,
+      "employees": 31,
+      "researchers": 10,
+      "models": 3,
+      "maxParam": 30,
+      "bestModel": 842,
+      "dailyRevenue": 371,
+      "reputation": 43,
+      "morale": 100,
+      "legalDebt": 0,
+      "techs": 23,
+      "regions": 1,
+      "clusters": 4,
+      "dcs": 1,
+      "training": 0,
+      "research": 0
+    }
+  ]
+}

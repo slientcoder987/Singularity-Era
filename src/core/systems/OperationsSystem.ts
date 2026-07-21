@@ -16,6 +16,7 @@ import { calcTotalRevenue, calcUserChurn } from '../utils/marketCalc';
 import { getActiveCloudTFLOPS } from '../utils/cloudComputeUtils';
 import { COMPUTE_CARD_SPECS } from '../config/computeCards';
 import { getStaffRevenueMultiplier, calcMoraleImpactFromOperations } from '../utils/crossSystemUtils';
+import { isCardPool } from '../utils/cardAggregate';
 import { clamp } from '../utils';
 import type { BoardMission } from '../entities/Operations';
 import { REGION_MAP } from '../config/regions';
@@ -391,21 +392,23 @@ function calcTokenRevenue(current: ReturnType<GameState['read']>): number {
   // 设计-11 说明：推理算力来自"非训练卡的空闲算力"× inferenceAllocation（默认 10%）。
   // 即玩家把所有卡分配给训练时推理收入为 0；空闲卡按比例软分配给推理，剩余算力闲置。
   // 这避免了训练与推理算力重复使用——推理消耗的是训练未占用的卡。
+  //
+  // ★ 性能优化：用聚合桶 O(桶数) 累计 online 卡 tflops，替代 O(卡数) 遍历 installedCards + cardIndex.get
+  //   10万卡场景从每日数十 ms 降至 <1ms。
+  //   注：assignedProjectMap 当前未启用（见 cardIndex.ts 注释），assignedProjectId 始终为 null，
+  //   因此桶 status='online' 且 location!=null（已安装）的卡均计入可推理算力，与原行为一致。
   const specMap = new Map(COMPUTE_CARD_SPECS.map((s) => [s.resourceId, s.tflopsPerCard]));
-  const totalTFLOPS = current.serverNodes.reduce((sum, node) => {
-    let nodeTflops = 0;
-    for (const cardUid of node.installedCards) {
-      for (const modelId of Object.keys(current.resourceMeta)) {
-        const pool = current.resourceMeta[modelId] as any[];
-        const card = pool?.find((c: any) => c.uid === cardUid);
-        if (card && card.status === 'online' && card.assignedProjectId === null) {
-          nodeTflops += specMap.get(modelId) ?? 500;
-          break;
-        }
+  let totalTFLOPS = 0;
+  for (const modelId of Object.keys(current.resourceMeta)) {
+    const pool = current.resourceMeta[modelId];
+    if (!pool || !isCardPool(pool)) continue;
+    const tflopsPerCard = specMap.get(modelId) ?? 500;
+    for (const agg of pool.aggregates) {
+      if (agg.status === 'online' && agg.count > 0 && agg.location) {
+        totalTFLOPS += agg.count * tflopsPerCard;
       }
     }
-    return sum + nodeTflops;
-  }, 0);
+  }
 
   // BUG-2 修复：活跃云算力同样可用于推理
   const cloudTFLOPS = getActiveCloudTFLOPS(current);

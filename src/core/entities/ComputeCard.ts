@@ -43,6 +43,9 @@ export interface ComputeCardSpec {
   sparsityAccel: boolean;
   /** 推荐用途 */
   recommendedRole: 'training' | 'inference' | 'both';
+
+  /** 发布日期 'YYYY-MM-DD'，游戏内该日期前无法采购（undefined 表示无限制） */
+  releaseDate?: string;
 }
 
 /**

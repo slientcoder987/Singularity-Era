@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { PurchaseHardwareCommand } from '../../core/commands/PurchaseHardwareCommand';
@@ -12,6 +12,7 @@ import {
 import {
   POWER_CONFIG,
 } from '../../core/config/resources';
+import { formatGameDate } from '../../core/utils';
 import {
   ROLE_CONFIG,
   ROLE_TO_STAFF_RESOURCE,
@@ -31,6 +32,7 @@ import {
 } from '../../core/config/cloudProviders';
 import type { CloudRentalContract } from '../../core/commands/RentComputeCommand';
 import { formatCurrency, formatResourceValue } from '../../core/utils';
+import { countOnlineCards } from '../../core/utils/cardAggregate';
 import styles from '../styles/App.module.css';
 
 /**
@@ -84,18 +86,11 @@ export function ResourceDevPanel() {
         ))}
       </div>
 
-      <div style={{ display: tab === 'funds' ? 'block' : 'none' }}>
-        <FundsTab game={game} />
-      </div>
-      <div style={{ display: tab === 'compute' ? 'block' : 'none' }}>
-        <ComputeTab game={game} />
-      </div>
-      <div style={{ display: tab === 'power' ? 'block' : 'none' }}>
-        <PowerTab game={game} />
-      </div>
-      <div style={{ display: tab === 'staff' ? 'block' : 'none' }}>
-        <StaffTab game={game} />
-      </div>
+      {/* ★ UI-1 修复：display:none → 条件渲染，隐藏 tab 自动卸载订阅 */}
+      {tab === 'funds' && <FundsTab game={game} />}
+      {tab === 'compute' && <ComputeTab game={game} />}
+      {tab === 'power' && <PowerTab game={game} />}
+      {tab === 'staff' && <StaffTab game={game} />}
     </section>
   );
 }
@@ -104,13 +99,15 @@ export function ResourceDevPanel() {
 
 function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
   const funds = useGameState((s) => s.resources['funds'] ?? 0);
-  const employees = useGameState((s) => s.employees);
+  // ★ I1 修复：原订阅整个 employees 数组，每日 StaffSystem 写入 fatigue/experience
+  //   都会触发 FundsTab 重渲染。改为派生 selector 返回 number，Object.is 稳定。
+  const employeeCount = useGameState((s) => s.employees.length);
+  const coreDailySalary = useGameState((s) => s.employees.reduce((sum, e) => sum + e.salary / 365, 0));
   const resourceMeta = useGameState((s) => s.resourceMeta);
   const resources = useGameState((s) => s.resources);
 
   // ===== 每日支出 =====
-  // 1. 核心员工日薪
-  const coreDailySalary = employees.reduce((sum, e) => sum + e.salary / 365, 0);
+  // 1. 核心员工日薪（已通过 selector 派生）
 
   // 2. 普通员工日薪
   const humanResources = game.registry.getByCategory('human');
@@ -119,15 +116,18 @@ function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
     return sum + count * (NORMAL_EMPLOYEE_SALARY / 365);
   }, 0);
 
-  // 3. 电费（基于在线卡数 + 基础设施耗电估算）
-  let dailyPowerCost = 0;
-  let dailyPowerConsumption = POWER_CONFIG.baseConsumptionKW;
-  for (const spec of COMPUTE_CARD_SPECS) {
-    const pool = (resourceMeta[spec.resourceId] as Array<{ status: string }>) ?? [];
-    const onlineCount = pool.filter((c) => c.status === 'online').length;
-    dailyPowerConsumption += onlineCount * spec.powerPerCard;
-  }
-  dailyPowerCost = dailyPowerConsumption * 24 * POWER_CONFIG.pricePerKWh;
+  // 3. 电费（基于在线卡数 + 基础设施耗电估算）— useMemo 避免非 resourceMeta 变化时重算
+  const { dailyPowerCost, dailyPowerConsumption } = useMemo(() => {
+    let consumption = POWER_CONFIG.baseConsumptionKW;
+    for (const spec of COMPUTE_CARD_SPECS) {
+      const onlineCount = countOnlineCards(resourceMeta[spec.resourceId]);
+      consumption += onlineCount * spec.powerPerCard;
+    }
+    return {
+      dailyPowerConsumption: consumption,
+      dailyPowerCost: consumption * 24 * POWER_CONFIG.pricePerKWh,
+    };
+  }, [resourceMeta]);
 
   const totalDailyExpense = coreDailySalary + normalDailySalary + dailyPowerCost;
 
@@ -163,7 +163,7 @@ function FundsTab({ game }: { game: ReturnType<typeof useGame> }) {
       </div>
       <div className={styles.devRow}>
         <span className={styles.devRowLabel} style={{ minWidth: 0 }}>· 核心员工</span>
-        <span className={styles.devHint}>{employees.length} 人 · -{formatCurrency(coreDailySalary)}/天</span>
+        <span className={styles.devHint}>{employeeCount} 人 · -{formatCurrency(coreDailySalary)}/天</span>
       </div>
       <div className={styles.devRow}>
         <span className={styles.devRowLabel} style={{ minWidth: 0 }}>· 普通员工</span>
@@ -195,6 +195,8 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
   const funds = resources['funds'] ?? 0;
   const computePower = resources['compute_power'] ?? 0;
   const resourceMeta = useGameState((s) => s.resourceMeta);
+  const startDate = useGameState((s) => s.startDate);
+  const date = useGameState((s) => s.date);
   const hqRegionId = useGameState((s) => s.headquartersRegionId);
   const hardwareDefs = game.registry.getByCategory('hardware');
   const [buyQty, setBuyQty] = useState<Record<string, number>>({});
@@ -250,6 +252,12 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
           const spec = getCardSpec(def.id);
           const cardCount = resources[def.id] ?? 0;
           const tflopsContribution = spec ? cardCount * spec.tflopsPerCard : 0;
+
+          // 发布日期检查
+          const currentDateStr = formatGameDate(startDate, date);
+          const isReleased = !spec?.releaseDate || currentDateStr >= spec.releaseDate;
+          const insufficientFunds = spec ? funds < spec.unitCost * (buyQty[def.id] ?? 1) : true;
+
           return (
             <div key={def.id} className={styles.devRow}>
               <span className={styles.devRowLabel}>{def.uiConfig?.icon} {def.name}</span>
@@ -257,6 +265,9 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
                 {cardCount} 张 · {formatResourceValue(tflopsContribution, 'tflops')}
                 {spec &&
                   ` · 单卡 ${spec.tflopsPerCard.toLocaleString()} TFLOPS · ${spec.memoryGB}GB · ${spec.memoryBandwidth}GB/s · NVLink ${spec.nvlinkBandwidth}GB/s · ${spec.powerPerCard}kW · ${spec.recommendedRole}`}
+                {spec?.releaseDate && !isReleased && (
+                  <span style={{ color: '#ff6b6b' }}> · 未发布（${spec.releaseDate}）</span>
+                )}
               </span>
               <input
                 className={styles.input}
@@ -269,7 +280,7 @@ function ComputeTab({ game }: { game: ReturnType<typeof useGame> }) {
               />
               <button
                 className={styles.btn}
-                disabled={spec ? funds < spec.unitCost * (buyQty[def.id] ?? 1) : true}
+                disabled={!isReleased || insufficientFunds}
                 onClick={() => game.executeCommand(new PurchaseHardwareCommand(def.id, buyQty[def.id] ?? 1))}
               >
                 买 {buyQty[def.id] ?? 1} 张
@@ -296,10 +307,12 @@ function PowerTab({ game }: { game: ReturnType<typeof useGame> }) {
   const hqRegionId = useGameState((s) => s.headquartersRegionId);
 
   const capacityKW = resources['power_kw'] ?? 0;
-  const powerPlants =
-    (resourceMeta['power_plants'] as Array<{ capacityKW: number; builtAt: number }>) ?? [];
-  const gridContracts =
-    (resourceMeta['grid_power_contracts'] as Array<{ kw: number; pricePerKW: number; purchasedAt: number }>) ?? [];
+  const rawPowerPlants = resourceMeta['power_plants'];
+  const powerPlants: Array<{ capacityKW: number; builtAt: number }> =
+    Array.isArray(rawPowerPlants) ? rawPowerPlants : [];
+  const rawGridContracts = resourceMeta['grid_power_contracts'];
+  const gridContracts: Array<{ kw: number; pricePerKW: number; purchasedAt: number }> =
+    Array.isArray(rawGridContracts) ? rawGridContracts : [];
   const gridKW = gridContracts.reduce((s, c) => s + c.kw, 0);
 
   // 地区信息
@@ -307,15 +320,19 @@ function PowerTab({ game }: { game: ReturnType<typeof useGame> }) {
   const gridPricePerKW = region ? getGridPowerPrice(region) : 800;
   const gridCapKW = region ? getGridPowerCap(region) : 5000;
 
-  // 计算当前耗电
-  let consumptionKW = POWER_CONFIG.baseConsumptionKW;
-  for (const spec of COMPUTE_CARD_SPECS) {
-    const pool = (resourceMeta[spec.resourceId] as Array<{ status: string }>) ?? [];
-    const onlineCount = pool.filter((c) => c.status === 'online').length;
-    consumptionKW += onlineCount * spec.powerPerCard;
-  }
+  // 计算当前耗电 — useMemo 避免非 resourceMeta 变化时重算
+  const { consumptionKW, dailyCost } = useMemo(() => {
+    let consumption = POWER_CONFIG.baseConsumptionKW;
+    for (const spec of COMPUTE_CARD_SPECS) {
+      const onlineCount = countOnlineCards(resourceMeta[spec.resourceId]);
+      consumption += onlineCount * spec.powerPerCard;
+    }
+    return {
+      consumptionKW: consumption,
+      dailyCost: consumption * 24 * POWER_CONFIG.pricePerKWh,
+    };
+  }, [resourceMeta]);
 
-  const dailyCost = consumptionKW * 24 * POWER_CONFIG.pricePerKWh;
   const utilization = capacityKW > 0 ? (consumptionKW / capacityKW) * 100 : 0;
   const isShortage = consumptionKW > capacityKW;
 
@@ -610,12 +627,58 @@ function CloudRentalSection({
 /* ============== 员工 ============== */
 
 function StaffTab({ game }: { game: ReturnType<typeof useGame> }) {
-  const employees = useGameState((s) => s.employees);
-  const resources = useGameState((s) => s.resources);
-
+  // ★ UI-6 修复：原订阅 s.employees 数组 + s.resources 整个对象。
+  //   每日员工属性更新（loyalty/fatigue/experience）或资金变动都会触发重渲染，
+  //   但 StaffTab 只显示计数。改为订阅派生原语（length + counts 拼接字符串），
+  //   仅在 counts 真正变化时重渲染。
   const humanResources = game.registry.getByCategory('human');
-  const totalNormal = humanResources.reduce((sum, def) => sum + (resources[def.id] ?? 0), 0);
-  const totalCore = employees.length;
+
+  const totalCore = useGameState((s) => s.employees.length);
+
+  // 核心员工 per-role 计数：订阅稳定的拼接字符串
+  const roleCoreCountsKey = useGameState((s) => {
+    let key = '';
+    for (const role of Object.keys(ROLE_CONFIG) as StaffRole[]) {
+      key += s.employees.filter((e) => e.role === role).length + ',';
+    }
+    return key;
+  });
+  const roleCoreCounts = useMemo(() => {
+    const counts = roleCoreCountsKey.split(',').map(Number);
+    const result = {} as Record<StaffRole, number>;
+    const roles = Object.keys(ROLE_CONFIG) as StaffRole[];
+    for (let i = 0; i < roles.length; i++) {
+      result[roles[i]] = counts[i] || 0;
+    }
+    return result;
+  }, [roleCoreCountsKey]);
+
+  // 普通员工 per-role 计数：订阅稳定的拼接字符串
+  const normalCountsKey = useGameState((s) => {
+    let key = '';
+    for (const role of Object.keys(ROLE_CONFIG) as StaffRole[]) {
+      key += (s.resources[ROLE_TO_STAFF_RESOURCE[role]] ?? 0) + ',';
+    }
+    return key;
+  });
+  const normalCounts = useMemo(() => {
+    const counts = normalCountsKey.split(',').map(Number);
+    const result = {} as Record<StaffRole, number>;
+    const roles = Object.keys(ROLE_CONFIG) as StaffRole[];
+    for (let i = 0; i < roles.length; i++) {
+      result[roles[i]] = counts[i] || 0;
+    }
+    return result;
+  }, [normalCountsKey]);
+
+  // 普通员工总数：订阅派生 number（仅在数值变化时重渲染）
+  const totalNormal = useGameState((s) => {
+    let total = 0;
+    for (const def of humanResources) {
+      total += s.resources[def.id] ?? 0;
+    }
+    return total;
+  });
 
   return (
     <div className={styles.tabBody}>
@@ -634,7 +697,7 @@ function StaffTab({ game }: { game: ReturnType<typeof useGame> }) {
       </div>
 
       {(Object.keys(ROLE_CONFIG) as StaffRole[]).map((role) => {
-        const count = employees.filter((e) => e.role === role).length;
+        const count = roleCoreCounts[role] ?? 0;
         const cap = CORE_EMPLOYEE_CAP_PER_ROLE;
         return (
           <div key={`core-${role}`} className={styles.devRow}>
@@ -654,8 +717,7 @@ function StaffTab({ game }: { game: ReturnType<typeof useGame> }) {
       </div>
 
       {(Object.keys(ROLE_CONFIG) as StaffRole[]).map((role) => {
-        const staffId = ROLE_TO_STAFF_RESOURCE[role];
-        const count = resources[staffId] ?? 0;
+        const count = normalCounts[role] ?? 0;
         return (
           <div key={`normal-${role}`} className={styles.devRow}>
             <span className={styles.devRowLabel} style={{ minWidth: 0 }}>· {ROLE_CONFIG[role].displayName}</span>

@@ -4,9 +4,10 @@
 import type { Command } from '../interfaces/Command';
 import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
+import type { ExperimentRepeatMode } from '../entities/ResearchProject';
 import { PURCHASE_MAP, COLLECTION_MAP, calcCollectionRate, calcCollectionQuality, type PurchaseRouteId, type CollectionRouteId } from '../config/dataAcquisition';
 import { CAPABILITIES } from '../config/capabilities';
-import { RESEARCH_CONFIG } from '../config/researchConfig';
+import { RESEARCH_CONFIG, EXPERIMENT_CONFIG, calcExperimentBudget, calcExperimentFundsCost } from '../config/researchConfig';
 import { StaffRole } from '../entities/Employee';
 import { ROLE_TO_STAFF_RESOURCE } from '../config/employees';
 import type { DataDomainId, Dataset, DataDomain } from '../entities/Dataset';
@@ -14,6 +15,7 @@ import { INITIAL_DATA_DOMAINS } from '../config/datasets';
 import type { DataCollectionProject } from '../entities/DataCollectionProject';
 import { isTechUnlocked } from '../utils/techLookup';
 import { getActiveTechEffects } from '../utils/crossSystemUtils';
+import { aggregateMultiplicative, TECH_EFFECT_CAPS } from '../utils/techEffectScale';
 
 /** 生成唯一 id */
 function genId(prefix: string): string {
@@ -62,9 +64,13 @@ export class AcquireDataCommand implements Command {
 
     // 预计算技术效果（避免在 state.update 内读取 draft.activeTechEffects）
     const techEffects = getActiveTechEffects(current);
-    const dataQualityBonus = techEffects
-      .filter((e) => e.type === 'improve_data_quality')
-      .reduce((s, e) => s + e.value, 0);
+    // ★ PR-A 修复：improve_data_quality 改用乘法叠加 + 硬性上限 +50%
+    //   原加法累加下，N 个 1% 技术可让数据质量加成无限增长
+    const dataQualityBonus = aggregateMultiplicative(
+      techEffects,
+      'improve_data_quality',
+      TECH_EFFECT_CAPS.improve_data_quality,
+    );
     const effectiveQuality = Math.min(1, route.quality + dataQualityBonus);
 
     state.update((draft) => {
@@ -152,13 +158,21 @@ export class SynthesizeDataCommand implements Command {
   }
 }
 
-/** 开始实验验证项目 */
+/**
+ * 开始实验验证项目（PR-B 重设计）
+ *
+ * 玩家通过拉条选择 computeRatio（算力投入比例 0.5%~50%）和 experimentParams（目标参数量 0.5B~64B）。
+ * 实验每日消耗集群总算力的 computeRatio 比例，与训练项目竞争算力。
+ * 实验完成时按公式 D 计算成熟度增益，受公式 A 的成熟度上限约束。
+ */
 export class StartExperimentCommand implements Command {
   constructor(
     private readonly targetArchId: string,
     private readonly researcherIds: string[],
-    private readonly scale: 'small' | 'medium',
-    private readonly mainModelParams: number,
+    private readonly experimentParams: number,
+    private readonly computeRatio: number,
+    private readonly repeatMode: ExperimentRepeatMode = 'once',
+    private readonly queueItemId: string | null = null,
   ) {}
 
   execute(state: GameState, events: EventBus): void {
@@ -188,9 +202,38 @@ export class StartExperimentCommand implements Command {
       }
     }
 
-    // 实验算力成本（TFLOPS·天），转化为资金成本扣除
-    const computeCost = this.mainModelParams * (this.scale === 'small' ? 0.05 : 0.15);
-    const fundsCost = Math.ceil(computeCost * 100_000); // 1 TFLOPS·天 ≈ $100,000
+    // PR-B 参数校验
+    const params = this.experimentParams;
+    // BUG 修复：computeRatio 缺省/NaN/Infinity 时给默认值，防止 dailyCompute=NaN 实验永不完成
+    let ratio = this.computeRatio;
+    if (ratio === undefined || ratio === null || !Number.isFinite(ratio)) {
+      ratio = EXPERIMENT_CONFIG.minComputeRatio;
+    }
+    if (params < EXPERIMENT_CONFIG.paramOptions[0] || params > EXPERIMENT_CONFIG.paramOptions[EXPERIMENT_CONFIG.paramOptions.length - 1]) {
+      events.emit('EXPERIMENT_REJECTED', { reason: `参数量必须在 ${EXPERIMENT_CONFIG.paramOptions[0]}~${EXPERIMENT_CONFIG.paramOptions[EXPERIMENT_CONFIG.paramOptions.length - 1]}B 之间` });
+      return;
+    }
+    if (ratio < EXPERIMENT_CONFIG.minComputeRatio || ratio > EXPERIMENT_CONFIG.maxComputeRatio) {
+      events.emit('EXPERIMENT_REJECTED', { reason: `算力比例必须在 ${(EXPERIMENT_CONFIG.minComputeRatio * 100).toFixed(1)}%~${(EXPERIMENT_CONFIG.maxComputeRatio * 100).toFixed(0)}% 之间` });
+      return;
+    }
+
+    // P0-1 修复：全局算力比例上限校验，防止实验占用导致训练停滞
+    const totalExperimentRatio = current.researchProjects
+      .filter((p) => p.status === 'in_progress' && p.computeRatio !== null)
+      .reduce((s, p) => s + (p.computeRatio ?? 0), 0);
+    if (totalExperimentRatio + ratio > 0.95) {
+      events.emit('EXPERIMENT_REJECTED', {
+        reason: `实验算力占比将达 ${((totalExperimentRatio + ratio) * 100).toFixed(0)}%，超过 95% 上限`,
+        currentRatio: totalExperimentRatio,
+      });
+      return;
+    }
+
+    // 公式 B：实验总算力预算
+    const computeBudgetTotal = calcExperimentBudget(params);
+    // 公式 C：启动资金成本
+    const fundsCost = calcExperimentFundsCost(params);
     const funds = current.resources['funds'] ?? 0;
     if (funds < fundsCost) {
       events.emit('EXPERIMENT_REJECTED', { reason: '资金不足', cost: fundsCost });
@@ -198,7 +241,8 @@ export class StartExperimentCommand implements Command {
     }
 
     state.update((draft) => {
-      draft.resources['funds'] -= fundsCost;
+      // ★ P0-2 修复：Math.max(0, ...) 保护资金下界
+      draft.resources['funds'] = Math.max(0, (draft.resources['funds'] ?? 0) - fundsCost);
 
       const projectId = genId('research');
       draft.researchProjects.push({
@@ -207,13 +251,21 @@ export class StartExperimentCommand implements Command {
         status: 'in_progress',
         targetArchId: this.targetArchId,
         researcherIds: [...this.researcherIds],
-        computeBudget: computeCost,
+        // PR-B：旧字段保留兼容（computeBudget 存总算力预算，experimentScale 留 null）
+        computeBudget: computeBudgetTotal,
         computeUsed: 0,
         progress: 0,
         startedAt: draft.date,
         completedAt: null,
         experimentResult: null,
-        experimentScale: this.scale,
+        experimentScale: null,
+        // PR-B 新字段
+        experimentParams: params,
+        computeRatio: ratio,
+        computeBudgetTotal,
+        // 队列扩展字段
+        repeatMode: this.repeatMode,
+        queueItemId: this.queueItemId,
       });
 
       // 标记研究员为已分配
@@ -226,7 +278,13 @@ export class StartExperimentCommand implements Command {
       }
     });
 
-    events.emit('EXPERIMENT_STARTED', { archId: this.targetArchId, scale: this.scale, cost: fundsCost });
+    events.emit('EXPERIMENT_STARTED', {
+      archId: this.targetArchId,
+      params,
+      computeRatio: ratio,
+      cost: fundsCost,
+      budget: computeBudgetTotal,
+    });
   }
 }
 
@@ -255,6 +313,106 @@ export class CancelResearchProjectCommand implements Command {
     });
 
     events.emit('RESEARCH_PROJECT_CANCELLED', this.projectId);
+  }
+}
+
+// ============================================================
+// 实验队列命令（PR-F：安排多项实验，自动执行）
+// ============================================================
+
+/**
+ * 将实验配置加入队列
+ *
+ * 不立即启动，仅加入 experimentQueue 列表。
+ * ResearchSystem 每日检查并发项目空位，自动从队列取出下一项启动。
+ */
+export class QueueExperimentCommand implements Command {
+  constructor(
+    private readonly techId: string,
+    private readonly researcherIds: string[],
+    private readonly experimentParams: number,
+    private readonly computeRatio: number,
+    private readonly repeatMode: ExperimentRepeatMode,
+  ) {}
+
+  execute(state: GameState, events: EventBus): void {
+    const current = state.read();
+
+    // 参数校验
+    const params = this.experimentParams;
+    // BUG 修复：computeRatio 缺省/NaN/Infinity 时给默认值，防止后续 dailyCompute=NaN
+    let ratio = this.computeRatio;
+    if (ratio === undefined || ratio === null || !Number.isFinite(ratio)) {
+      ratio = EXPERIMENT_CONFIG.minComputeRatio;
+    }
+    if (params < EXPERIMENT_CONFIG.paramOptions[0] || params > EXPERIMENT_CONFIG.paramOptions[EXPERIMENT_CONFIG.paramOptions.length - 1]) {
+      events.emit('EXPERIMENT_QUEUE_REJECTED', { reason: `参数量必须在 ${EXPERIMENT_CONFIG.paramOptions[0]}~${EXPERIMENT_CONFIG.paramOptions[EXPERIMENT_CONFIG.paramOptions.length - 1]}B 之间` });
+      return;
+    }
+    if (ratio < EXPERIMENT_CONFIG.minComputeRatio || ratio > EXPERIMENT_CONFIG.maxComputeRatio) {
+      events.emit('EXPERIMENT_QUEUE_REJECTED', { reason: `算力比例必须在 ${(EXPERIMENT_CONFIG.minComputeRatio * 100).toFixed(1)}%~${(EXPERIMENT_CONFIG.maxComputeRatio * 100).toFixed(0)}% 之间` });
+      return;
+    }
+
+    // 研究员校验
+    for (const empId of this.researcherIds) {
+      const emp = current.employees.find((e) => e.id === empId);
+      if (!emp || emp.role !== StaffRole.RESEARCHER) {
+        events.emit('EXPERIMENT_QUEUE_REJECTED', { reason: `员工 ${empId} 不是有效研究员` });
+        return;
+      }
+    }
+
+    // P0-1 修复：入队时校验单期算力比例，启动时由 ResearchSystem 校验全局上限
+    const totalExperimentRatio = current.researchProjects
+      .filter((p) => p.status === 'in_progress' && p.computeRatio !== null)
+      .reduce((s, p) => s + (p.computeRatio ?? 0), 0);
+    if (totalExperimentRatio + ratio > 0.95) {
+      events.emit('EXPERIMENT_QUEUE_REJECTED', {
+        reason: `当前实验算力占比 ${(totalExperimentRatio * 100).toFixed(0)}% + 本项 ${ratio * 100}% 将超过 95% 上限`,
+      });
+      return;
+    }
+
+    state.update((draft) => {
+      draft.experimentQueue.push({
+        id: genId('expq'),
+        techId: this.techId,
+        experimentParams: params,
+        computeRatio: ratio,
+        researcherIds: [...this.researcherIds],
+        repeatMode: this.repeatMode,
+        queuedAt: draft.date,
+      });
+    });
+
+    events.emit('EXPERIMENT_QUEUED', { techId: this.techId, repeatMode: this.repeatMode });
+  }
+}
+
+/**
+ * 从队列中移除一项
+ */
+export class RemoveQueuedExperimentCommand implements Command {
+  constructor(private readonly queueItemId: string) {}
+
+  execute(state: GameState, events: EventBus): void {
+    state.update((draft) => {
+      draft.experimentQueue = draft.experimentQueue.filter((q) => q.id !== this.queueItemId);
+    });
+    events.emit('EXPERIMENT_QUEUE_REMOVED', this.queueItemId);
+  }
+}
+
+/**
+ * 清空实验队列
+ */
+export class ClearExperimentQueueCommand implements Command {
+  execute(state: GameState, events: EventBus): void {
+    state.update((draft) => {
+      draft.experimentQueue = [];
+    });
+    events.emit('EXPERIMENT_QUEUE_CLEARED', {});
   }
 }
 

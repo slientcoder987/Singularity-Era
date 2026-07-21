@@ -152,4 +152,15 @@ export type TechEffect =
   | { type: 'enable_distillation'; efficiencyBonus: number }
   | { type: 'improve_data_quality'; value: number }
   | { type: 'reduce_legal_risk'; value: number }
-  | { type: 'improve_alignment'; value: number };
+  | { type: 'improve_alignment'; value: number }
+  // 数据操作解锁（PR-B v3：数据科技深度机制）
+  | { type: 'unlock_data_purge'; maxTokensBase: number }
+  | { type: 'unlock_data_dedup'; maxTokensBase: number }
+  | { type: 'unlock_data_curate'; maxTokensBase: number }
+  // 后训练解锁（PR-B v3）
+  | { type: 'unlock_sft' }
+  | { type: 'unlock_rlhf' }
+  | { type: 'unlock_dpo' }
+  | { type: 'unlock_cot' }
+  // 并行可靠度（PR-B v3：maturity 降低并行故障风险）
+  | { type: 'parallel_reliability'; strategy: 'pp' | 'tp' | 'ep' | 'cp'; baseRisk: number; safeDegree: number };

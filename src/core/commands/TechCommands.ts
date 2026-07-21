@@ -1,162 +1,18 @@
 /**
- * 技术研发命令
+ * 技术相关命令
  *
- * 数据结构变更（研发系统扩展）：
- * - unlockedTechs.includes → isTechUnlocked（基于 techMaturity）
- * - StartResearchCommand 接受可选 researcherIds 参数（PR2 起使用，PR1 默认空数组）
- * - researchingTech 包含 researcherIds / dailyCost 字段
+ * PR-C 变更：
+ * - 删除 StartResearchCommand / CancelResearchCommand（技术树花钱时间研发机制已废弃）
+ * - 所有技术解锁与提升统一通过实验系统 + idea 验证流程完成
+ * - 保留 PolishTechCommand（打磨已解锁技术，提升成熟度）
+ * - researchingTech 字段在 GameState 中保留但不再写入（仅兼容旧存档）
  */
 import type { Command } from '../interfaces/Command';
 import type { GameState } from '../GameState';
 import type { EventBus } from '../EventBus';
 import type { Employee } from '../entities/Employee';
 import { StaffRole } from '../entities/Employee';
-import { TECH_MAP } from '../config/techTree';
-import { isTechUnlocked } from '../utils/techLookup';
 import { calcEmployeeEfficiency } from '../utils/employeeUtils';
-
-/**
- * 开始研发技术
- *
- * 检查前置技术、资金，设置 researchingTech 状态。
- *
- * @param techId         目标技术 id
- * @param researcherIds  参与研发的研究员 id 列表（PR2 起使用，PR1 留空）
- */
-export class StartResearchCommand implements Command {
-  constructor(
-    private readonly techId: string,
-    private readonly researcherIds: string[] = [],
-  ) {}
-
-  execute(state: GameState, events: EventBus): void {
-    const current = state.read();
-    const tech = TECH_MAP[this.techId];
-    if (!tech) {
-      events.emit('RESEARCH_REJECTED', { reason: '未知技术', techId: this.techId });
-      return;
-    }
-
-    // 初始技术无需研发
-    if (tech.researchDays === 0) {
-      events.emit('RESEARCH_REJECTED', { reason: '该技术已解锁或无需研发' });
-      return;
-    }
-
-    // 检查是否已解锁（基于 techMaturity）
-    if (isTechUnlocked(current, this.techId)) {
-      events.emit('RESEARCH_REJECTED', { reason: '技术已解锁' });
-      return;
-    }
-
-    // 检查前置技术
-    for (const prereq of tech.prerequisites) {
-      if (!isTechUnlocked(current, prereq)) {
-        events.emit('RESEARCH_REJECTED', { reason: `前置技术未解锁: ${TECH_MAP[prereq]?.name ?? prereq}` });
-        return;
-      }
-    }
-
-    // 检查是否已有研发中技术
-    if (current.researchingTech) {
-      events.emit('RESEARCH_REJECTED', { reason: '已有技术正在研发中' });
-      return;
-    }
-
-    // 校验研究员有效性（PR2）：必须 idle + RESEARCHER 角色
-    const empMap = new Map(current.employees.map((e) => [e.id, e]));
-    const validResearchers: Employee[] = [];
-    for (const rid of this.researcherIds) {
-      const emp = empMap.get(rid);
-      if (!emp) {
-        events.emit('RESEARCH_REJECTED', { reason: `研究员不存在: ${rid}` });
-        return;
-      }
-      if (emp.role !== StaffRole.RESEARCHER) {
-        events.emit('RESEARCH_REJECTED', { reason: `${emp.name} 不是研究员` });
-        return;
-      }
-      if (emp.status !== 'idle') {
-        events.emit('RESEARCH_REJECTED', { reason: `${emp.name} 当前不可用（${emp.status}）` });
-        return;
-      }
-      validResearchers.push(emp);
-    }
-    // 轻量技术（researchDays < 5）不强制要求研究员；中重型至少 1 名
-    if (tech.researchDays >= 5 && validResearchers.length === 0) {
-      events.emit('RESEARCH_REJECTED', { reason: '该技术至少需要 1 名研究员' });
-      return;
-    }
-
-    // 检查资金
-    const funds = current.resources['funds'] ?? 0;
-    if (funds < tech.researchCost) {
-      events.emit('RESEARCH_REJECTED', { reason: '资金不足', cost: tech.researchCost });
-      return;
-    }
-
-    // 每日维持成本：researchCost / researchDays × 0.1
-    // 总维持费约为一次性成本的 10%，避免资金充裕时无限研发
-    const dailyCost = Math.round((tech.researchCost / Math.max(1, tech.researchDays)) * 0.1);
-
-    state.update((draft) => {
-      draft.resources['funds'] -= tech.researchCost;
-
-      // 锁定研究员（PR2）：status='assigned'，assignedProjectId 标记为 tech-research-${techId}
-      const lockProjectId = `tech-research-${this.techId}`;
-      for (const emp of validResearchers) {
-        const target = draft.employees.find((e) => e.id === emp.id);
-        if (target) {
-          target.status = 'assigned';
-          target.assignedProjectId = lockProjectId;
-        }
-      }
-
-      draft.researchingTech = {
-        techId: this.techId,
-        progressDays: 0,
-        totalDays: tech.researchDays,
-        researcherIds: [...this.researcherIds],
-        dailyCost,
-      };
-    });
-
-    events.emit('RESEARCH_STARTED', this.techId, tech.name);
-  }
-}
-
-/**
- * 取消研发
- *
- * PR2：释放锁定研究员的 assigned 状态（status='idle', assignedProjectId=undefined）。
- */
-export class CancelResearchCommand implements Command {
-  execute(state: GameState, events: EventBus): void {
-    const current = state.read();
-    if (!current.researchingTech) {
-      events.emit('RESEARCH_CANCEL_REJECTED', { reason: '无研发中技术' });
-      return;
-    }
-
-    const techId = current.researchingTech.techId;
-    const researcherIds = current.researchingTech.researcherIds ?? [];
-    const lockProjectId = `tech-research-${techId}`;
-
-    state.update((draft) => {
-      // 释放锁定研究员
-      for (const rid of researcherIds) {
-        const emp = draft.employees.find((e) => e.id === rid);
-        if (emp && emp.assignedProjectId === lockProjectId) {
-          emp.status = 'idle';
-          emp.assignedProjectId = undefined;
-        }
-      }
-      draft.researchingTech = null;
-    });
-
-    events.emit('RESEARCH_CANCELLED');
-  }
-}
 
 /**
  * 主动打磨技术（提升成熟度）

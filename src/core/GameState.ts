@@ -6,7 +6,7 @@ import type { ServerNode, Cluster, DataCenter, TechEffect } from './entities/Inf
 import type { TrainingProject } from './entities/TrainingProject';
 import type { Model } from './entities/Model';
 import type { Dataset } from './entities/Dataset';
-import type { ResearchProject, ExperimentResult } from './entities/ResearchProject';
+import type { ResearchProject, ExperimentResult, ExperimentQueueItem } from './entities/ResearchProject';
 import type { RiskState } from './entities/RiskState';
 import type { DataCollectionProject } from './entities/DataCollectionProject';
 import type { RegionId } from './config/regions';
@@ -116,10 +116,13 @@ export interface GameData {
    */
   techMaturity: Record<string, number>;
   /**
-   * 正在研发的技术
+   * 正在研发的技术（@deprecated PR-C：技术树花钱时间研发机制已废弃）
    *
-   * researcherIds: 参与研发的研究员 id 列表（PR2 起使用）
-   * dailyCost: 每日研发维持成本（资金不足时暂停研发）
+   * 该字段保留仅为兼容旧存档，加载时会被 Game.migrateOldData 强制置 null。
+   * 新代码不应读取或写入此字段。所有技术解锁与提升统一通过：
+   * - 实验系统（ResearchSystem + StartExperimentCommand）
+   * - idea 验证流程（TechResearchSystem.processIdeaVerification）
+   * - 开源采纳（AdoptOpenSourceCommand） / 小公司收购（AcquireSmallCompanyCommand）
    */
   researchingTech: {
     techId: string;
@@ -134,6 +137,8 @@ export interface GameData {
   // ===== P1 研发流程与风险系统 =====
   /** 研发项目列表（实验验证） */
   researchProjects: ResearchProject[];
+  /** 实验队列（待自动执行的实验配置） */
+  experimentQueue: ExperimentQueueItem[];
   /** 实验结果历史 */
   experimentResults: ExperimentResult[];
   /** 风险状态 */
@@ -231,6 +236,11 @@ export interface GameData {
   lastDayPowerCost: number;
   /** lastDayPowerCost 对应的游戏日（用于检测跨日重置） */
   lastDayPowerCostDate: number;
+  /** 上一个游戏日实际扣除的基础设施维护成本（由 InfraMaintenanceSystem 写入），
+   *  供 RegionSystem 计算利润税基使用，O(1) 读取替代 O(N) 遍历。 */
+  lastDayInfraCost: number;
+  /** lastDayInfraCost 对应的游戏日（用于检测跨日重置） */
+  lastDayInfraCostDate: number;
 }
 
 /** 基础设施事件日志条目 */
@@ -272,11 +282,37 @@ export class GameState {
   private data: GameData;
   private readonly listeners = new Set<GameStateListener>();
   private readonly resourceDefs = new Map<string, ResourceDefinition>();
+  /** 批量更新深度（>0 时抑制 notify，仅标记 dirty） */
+  private batchDepth = 0;
+  /** 批量更新期间是否有状态变更待通知 */
+  private batchDirty = false;
 
   constructor(initial: GameData) {
     this.data = produce(initial, () => {
       /* 冻结 */
     });
+  }
+
+  /**
+   * 批量更新：在 fn 执行期间抑制 notify，fn 结束后统一通知一次。
+   *
+   * 用于 GameLoop.advanceDay：15 个系统每日 tick 产生 30+ 次 update，
+   * 每次都会 notify 所有 useGameState 订阅者（60+ 个 selector 重算）。
+   * 批量后降为 1 次 notify，消除 UI 层重复重算。
+   *
+   * 可嵌套调用（深度计数），仅最外层结束时通知。
+   */
+  batch<T>(fn: () => T): T {
+    this.batchDepth++;
+    try {
+      return fn();
+    } finally {
+      this.batchDepth--;
+      if (this.batchDepth === 0 && this.batchDirty) {
+        this.batchDirty = false;
+        this.flushNotify();
+      }
+    }
   }
 
   /** 注册资源定义（由 Game 在构造时统一注入）。 */
@@ -335,12 +371,20 @@ export class GameState {
    * 可选传入 meta，合并到该资源的元数据。
    */
   setResource(id: string, value: number, meta?: any): void {
+    // ★ P1-10 修复：NaN/Infinity 防护
+    const safeValue = Number.isFinite(value) ? value : 0;
     const def = this.resourceDefs.get(id);
-    const clamped = def ? clamp(value, def.minValue, def.maxValue) : value;
+    const clamped = def ? clamp(safeValue, def.minValue, def.maxValue) : safeValue;
     this.data = produce(this.data, (draft) => {
       draft.resources[id] = clamped;
       if (meta !== undefined) {
-        draft.resourceMeta[id] = meta;
+        // 若现有值与新值均为数组，直接替换（保持数组类型，避免 { ...array } 展平为对象）
+        if (Array.isArray(draft.resourceMeta[id]) && Array.isArray(meta)) {
+          draft.resourceMeta[id] = meta;
+        } else {
+          // 浅合并：保留旧字段
+          draft.resourceMeta[id] = { ...(draft.resourceMeta[id] ?? {}), ...meta };
+        }
       }
     });
     this.notify();
@@ -350,16 +394,34 @@ export class GameState {
    * 增减某资源数值（delta 可为负），自动限制边界。
    */
   addResource(id: string, delta: number): void {
+    // ★ P1-10 修复：NaN/Infinity 防护
+    const safeDelta = Number.isFinite(delta) ? delta : 0;
     const def = this.resourceDefs.get(id);
     const current = this.data.resources[id] ?? 0;
-    const next = def ? clamp(current + delta, def.minValue, def.maxValue) : current + delta;
+    // ★ P0-2 修复：未注册资源也应用 Math.max(0, ...) 资金下界保护
+    const next = def
+      ? clamp(current + safeDelta, def.minValue, def.maxValue)
+      : Math.max(0, current + safeDelta);
     this.data = produce(this.data, (draft) => {
       draft.resources[id] = next;
     });
     this.notify();
   }
 
+  /**
+   * 通知所有订阅者。
+   * 在 batch 模式下仅标记 dirty，由 batch() 结束时统一 flushNotify。
+   */
   private notify(): void {
+    if (this.batchDepth > 0) {
+      this.batchDirty = true;
+      return;
+    }
+    this.flushNotify();
+  }
+
+  /** 实际执行通知（遍历所有 listener） */
+  private flushNotify(): void {
     const snapshot = Array.from(this.listeners);
     for (const listener of snapshot) {
       listener(this.data);

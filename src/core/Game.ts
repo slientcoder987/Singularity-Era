@@ -7,6 +7,11 @@ import { ResourceRegistry } from './resources/ResourceRegistry';
 import { INITIAL_RESOURCES } from './config/resources';
 import { COLLECTION_MAP } from './config/dataAcquisition';
 import { IDEA_TECH_MAP } from './config/techTree';
+import { IDEA_TECH_POOL } from './config/ideaTechPool';
+import { OPEN_SOURCE_TECH_POOL } from './config/openSourcePool';
+import { SMALL_COMPANY_TECH_POOL } from './config/smallCompanyTech';
+import { COMPUTE_CARD_SPECS } from './config/computeCards';
+import { createEmptyPool, migrateFromCards } from './utils/cardAggregate';
 
 /**
  * Game 主控制器
@@ -51,15 +56,30 @@ export class Game {
   private ensureInitialResourceValues(): void {
     const current = this.state.read().resources;
     const needsInit: Array<{ id: string; value: number }> = [];
+    const cardPoolsNeeded: string[] = [];
     for (const def of this.registry.getAll()) {
       if (current[def.id] === undefined) {
         needsInit.push({ id: def.id, value: def.initialValue });
       }
+      // 计算卡资源需要初始化空 CardPool（聚合存储）
+      if (def.id.startsWith('compute_') && def.id !== 'compute_power') {
+        const existing = this.state.read().resourceMeta[def.id];
+        const isPool = existing && typeof existing === 'object' && (existing as any).aggregates !== undefined;
+        if (!isPool) {
+          cardPoolsNeeded.push(def.id);
+        }
+      }
     }
-    if (needsInit.length > 0) {
+    if (needsInit.length > 0 || cardPoolsNeeded.length > 0) {
       this.state.update((draft) => {
         for (const { id, value } of needsInit) {
           draft.resources[id] = value;
+        }
+        for (const id of cardPoolsNeeded) {
+          const existing = draft.resourceMeta[id];
+          if (!existing || (existing as any).aggregates === undefined) {
+            draft.resourceMeta[id] = createEmptyPool();
+          }
         }
       });
     }
@@ -104,7 +124,18 @@ export class Game {
 
   /** 序列化当前状态为 JSON 字符串 */
   save(): string {
-    return JSON.stringify(this.state.read());
+    // ★ 存档优化：node.installedCards 是 10万 UID 字符串的冗余数据（≈4.5MB），
+    //   聚合桶的 location 字段已记录每张卡所属节点，可在加载时重建。
+    //   序列化前清空 installedCards，加载时由 rebuildInstalledCards 重建。
+    const snapshot = this.state.read();
+    const slim = {
+      ...snapshot,
+      serverNodes: snapshot.serverNodes.map((n) => ({
+        ...n,
+        installedCards: [] as string[],
+      })),
+    };
+    return JSON.stringify(slim);
   }
 
   /** 从 JSON 字符串读取存档并替换当前状态 */
@@ -112,8 +143,43 @@ export class Game {
     const parsed = JSON.parse(json) as GameData;
     // BUG-15 修复：旧存档迁移——为 DataCollectionProject 补 normalEngineerCount 字段
     this.migrateOldData(parsed);
+    // ★ 存档优化：从聚合桶 location 重建 node.installedCards
+    this.rebuildInstalledCards(parsed);
     this.state.resetData(parsed);
     this.loop.setSpeed(parsed.speed);
+  }
+
+  /**
+   * 从聚合桶的 location 字段重建 node.installedCards。
+   *
+   * 存档时 installedCards 被清空以减小文件体积（10万 UID ≈4.5MB）。
+   * 加载时遍历 resourceMeta 的所有聚合桶，按 location 分组生成 UID。
+   *
+   * UID 格式：agg-{modelId}-{ageBucket}-{nodeId}-{idx}
+   * 与 InstallCardCommand 生成的格式一致，确保运行时兼容。
+   */
+  private rebuildInstalledCards(data: GameData): void {
+    // 先清空所有节点的 installedCards（防御性）
+    for (const node of data.serverNodes) {
+      node.installedCards = [];
+    }
+    // 按节点 id 索引
+    const nodeMap = new Map(data.serverNodes.map((n) => [n.id, n]));
+    // 遍历所有聚合桶，按 location 分配 UID
+    for (const [modelId, pool] of Object.entries(data.resourceMeta)) {
+      if (!pool || !Array.isArray((pool as any).aggregates)) continue;
+      for (const agg of (pool as any).aggregates) {
+        // 只处理有 location（已安装）且非空桶的卡
+        if (!agg.location || agg.count <= 0) continue;
+        const node = nodeMap.get(agg.location);
+        if (!node) continue;
+        // 为该桶生成 count 个 UID（格式与 InstallCardCommand 一致）
+        const startIdx = node.installedCards.length;
+        for (let i = 0; i < agg.count; i++) {
+          node.installedCards.push(`agg-${modelId}-${agg.ageBucket}-${agg.location}-${startIdx + i}`);
+        }
+      }
+    }
   }
 
   /**
@@ -164,6 +230,19 @@ export class Game {
       data.executives.ctoId ??= null;
     }
 
+    // ★ I2 迁移：Model.publishedAt 字段引入
+    //   旧存档没有 publishedAt，但 daysSincePublished 仍存在。
+    //   如果模型曾发布过（published===true 或 daysSincePublished>0），
+    //   推断 publishedAt = today - daysSincePublished；否则 -1。
+    if (Array.isArray(data.models)) {
+      for (const m of data.models) {
+        if (m.publishedAt === undefined) {
+          const dsp = m.daysSincePublished ?? 0;
+          m.publishedAt = dsp > 0 ? (data.date ?? 0) - dsp : -1;
+        }
+      }
+    }
+
     // ===== 研发系统扩展迁移（技术成熟度 / idea / 小公司 / 开源） =====
     // 1. unlockedTechs: string[] → techMaturity: Record<string, number>
     //    旧 unlockedTechs 中每个 techId 迁移为 maturity=50；pretraining 特殊置 100
@@ -182,14 +261,10 @@ export class Game {
       data.techMaturity['pretraining'] ??= 100;
     }
 
-    // 2. researchingTech 补齐 researcherIds / dailyCost（PR2 起使用）
+    // 2. researchingTech 字段已废弃（PR-C：技术树研发机制删除）
+    //    旧存档中可能存在非 null 值，强制清空以避免 IdeaGenerationSystem 等系统误读
     if (data.researchingTech) {
-      if (!Array.isArray(data.researchingTech.researcherIds)) {
-        data.researchingTech.researcherIds = [];
-      }
-      if (typeof data.researchingTech.dailyCost !== 'number') {
-        data.researchingTech.dailyCost = 0;
-      }
+      data.researchingTech = null;
     }
 
     // 3. 新增字段防御性补齐
@@ -199,6 +274,91 @@ export class Game {
     data.acceptedIdeaTechs ??= [];
     data.lastSmallCompanyRefreshDay ??= -999;
     data.lastOpenSourceDay ??= {};
+    data.experimentQueue ??= [];
+
+    // ★ R1 迁移：基础设施维护成本统一记账字段
+    data.lastDayInfraCost ??= 0;
+    data.lastDayInfraCostDate ??= -999;
+
+    // 3.0 迁移：旧 ResearchProject 没有 repeatMode / queueItemId 字段
+    if (Array.isArray(data.researchProjects)) {
+      for (const proj of data.researchProjects) {
+        if (proj.repeatMode === undefined) {
+          (proj as any).repeatMode = 'once';
+        }
+        if (proj.queueItemId === undefined) {
+          (proj as any).queueItemId = null;
+        }
+      }
+    }
+
+    // 3.1 PR-D 迁移：旧 SmallCompany 没有 techMaturities 字段
+    //     - 已收购的：技术早已应用，无需追溯，补空对象即可
+    //     - 未收购的：按 20~80 随机 roll，让玩家在收购前可见成熟度
+    for (const sc of data.smallCompanies) {
+      if (sc.techMaturities === undefined) {
+        sc.techMaturities = {};
+        if (!sc.acquired) {
+          for (const tid of sc.technologies) {
+            sc.techMaturities[tid] = 20 + Math.floor(Math.random() * 61); // 20~80
+          }
+        }
+      }
+    }
+
+    // 3.2 PR-B v2 迁移：旧 acceptedIdeaTechs 没有 difficulty 字段
+    //     从原始池中匹配恢复难度；找不到则默认 4（中等偏上复杂度）
+    const allPools = [...IDEA_TECH_POOL, ...OPEN_SOURCE_TECH_POOL, ...SMALL_COMPANY_TECH_POOL];
+    for (const tech of data.acceptedIdeaTechs) {
+      if (tech.difficulty === undefined) {
+        const match = allPools.find((p) => p.id === tech.id);
+        tech.difficulty = match?.difficulty ?? 4;
+      }
+    }
+
+    // 3.3 PR-B v3 迁移：旧模型没有 postTraining 字段
+    for (const model of data.models) {
+      if (model.postTraining === undefined) {
+        (model as any).postTraining = [];
+      }
+    }
+
+    // 3.4 迁移：修复被 { ...array } 展平为对象的 resourceMeta 数组
+    //     旧版 setResource 会把 power_plants / grid_power_contracts 等数组变成
+    //     {0: item1, 1: item2, ...} 普通对象，导致 for-of 遍历崩溃
+    for (const key of Object.keys(data.resourceMeta)) {
+      const val: unknown = (data.resourceMeta as Record<string, unknown>)[key];
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        const obj = val as Record<string, unknown>;
+        const entries = Object.entries(obj);
+        // 所有 key 均为数字字符串 → 确认为被展平的数组，恢复
+        if (entries.length > 0 && entries.every(([k]) => /^\d+$/.test(k))) {
+          // 按数字索引排序后取 values
+          entries.sort(([a], [b]) => Number(a) - Number(b));
+          (data.resourceMeta as Record<string, unknown>)[key] = entries.map(([, v]) => v);
+        }
+      }
+    }
+
+    // 3.5 迁移：旧 CardInstance[] → 新 CardPool（聚合存储）
+    //     旧版本每张卡独立对象，100k 卡场景下内存与遍历性能不可接受
+    //     聚合后：100k 卡 ≈ 几千桶，遍历从 O(N) 降为 O(桶数)
+    const cardModelIds = new Set(COMPUTE_CARD_SPECS.map((s) => s.resourceId));
+    for (const key of Object.keys(data.resourceMeta)) {
+      if (!cardModelIds.has(key)) continue;
+      const val = (data.resourceMeta as Record<string, unknown>)[key];
+      if (Array.isArray(val) && val.length > 0 && (val[0] as any)?.uid !== undefined) {
+        // 旧 CardInstance[] 格式
+        const cards = val as any[];
+        (data.resourceMeta as Record<string, unknown>)[key] = migrateFromCards(cards, key);
+      } else if (val && typeof val === 'object' && (val as any).aggregates !== undefined) {
+        // 已是新 CardPool 格式，无需迁移
+        continue;
+      } else if (val === undefined || val === null) {
+        // 未初始化，标记为新池
+        (data.resourceMeta as Record<string, unknown>)[key] = createEmptyPool();
+      }
+    }
 
     // 4. 加载已接受的独有技术，重建运行时 IDEA_TECH_MAP
     if (data.acceptedIdeaTechs.length > 0) {

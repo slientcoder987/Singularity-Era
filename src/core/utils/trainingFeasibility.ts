@@ -3,7 +3,8 @@ import type { Cluster, ServerNode } from '../entities/Infrastructure';
 import type { GameState } from '../GameState';
 import type { ParallelConfig } from '../entities/TrainingProject';
 import { getCardSpec } from '../config/computeCards';
-import { getCardIndex } from './cardIndex';
+import { getNodeIndex } from './infraIndex';
+import { countOnlineCardsByNode } from './cardAggregate';
 
 /**
  * 训练可行性评估结果
@@ -46,12 +47,15 @@ export interface TrainingModelParams {
  *
  * 权重 fp16: 2 GB/B
  * 优化器状态（Adam FP32 master + 动量 + 方差）: 12 GB/B
- * 激活内存: 与上下文长度成正比
+ * 激活内存: 与上下文长度成正比（数值修复：系数 0.0002 → 0.00005，
+ *   原值对 70B×4096ctx 算出 57GB 激活 + 980GB 权重/优化器，总 1037GB/卡，
+ *   远超 H100 80GB 显存，使 70B 纯 DP 完全不可行。修正后激活约 14GB，
+ *   配合 TP/PP 并行可在多卡间分摊权重/优化器，大模型训练具备可行性路径。）
  */
 function estimateRequiredMemory(model: TrainingModelParams): number {
   const weightMemory = model.paramCount * 2;
   const optimizerMemory = model.paramCount * 12;
-  const activationMemory = model.paramCount * 0.0002 * model.contextLength;
+  const activationMemory = model.paramCount * 0.00005 * model.contextLength;
   return weightMemory + optimizerMemory + activationMemory;
 }
 
@@ -216,23 +220,33 @@ export function diagnoseTraining(
   }
 
   // 2. 收集集群内所有在线卡规格
-  const cardSpecs: ComputeCardSpec[] = [];
+  // ★ 性能优化：用聚合桶 O(桶数) 统计替代 O(卡数) 的 node.installedCards UID 遍历
+  //   10万卡场景：O(几千桶) vs O(10万UID+cardIndex.get)
   const nodes: ServerNode[] = [];
-  const diagIndex = getCardIndex(current);
+  const nodeIdx = getNodeIndex(current);
+  const nodeIdSet = new Set(cluster.nodes);
+  const onlineByNode = countOnlineCardsByNode(current.resourceMeta, nodeIdSet);
+  // 型号 resourceId → { spec, count } 聚合
+  const byModel = new Map<string, { spec: ComputeCardSpec; count: number }>();
+  let availGpus = 0;
   for (const nodeId of cluster.nodes) {
-    const node = current.serverNodes.find((n) => n.id === nodeId);
+    const node = nodeIdx.get(nodeId);
     if (!node) continue;
     nodes.push(node);
-    for (const cardUid of node.installedCards) {
-      const entry = diagIndex.get(cardUid);
-      if (entry && entry.card.status === 'online' && entry.card.assignedProjectId === null) {
-        const spec = getCardSpec(entry.modelId);
-        if (spec) cardSpecs.push(spec);
+    const nodeCards = onlineByNode.get(nodeId);
+    if (!nodeCards) continue;
+    availGpus += nodeCards.total;
+    for (const [modelId, count] of nodeCards.byModel) {
+      const spec = getCardSpec(modelId);
+      if (spec) {
+        const agg = byModel.get(spec.resourceId);
+        if (agg) agg.count += count;
+        else byModel.set(spec.resourceId, { spec, count });
       }
     }
   }
 
-  if (cardSpecs.length === 0) {
+  if (availGpus === 0) {
     issues.push({ severity: 'blocker', category: 'gpu_count', message: '集群内无在线GPU，请先安装计算卡' });
     return issues;
   }
@@ -252,10 +266,16 @@ export function diagnoseTraining(
   const tpReducer = (parallelConfig?.tpSize ?? 1) > 1 ? parallelConfig!.tpSize : 1;
   const totalMemPerReplica = rawMemPerReplica / (ppReducer * tpReducer);
 
-  // 4. 检查单卡显存
-  const minCardMem = Math.min(...cardSpecs.map((s) => s.memoryGB));
-  const maxCardMem = Math.max(...cardSpecs.map((s) => s.memoryGB));
-  const maxCardName = cardSpecs.find((s) => s.memoryGB === maxCardMem)?.name ?? '未知';
+  // 4. 检查单卡显存（★ 从聚合 Map O(型号数) 读取，替代 Math.min(...数十万数组)）
+  let minCardMem = Infinity;
+  let maxCardMem = -Infinity;
+  let maxCardName = '未知';
+  for (const { spec } of byModel.values()) {
+    if (spec.memoryGB < minCardMem) minCardMem = spec.memoryGB;
+    if (spec.memoryGB > maxCardMem) { maxCardMem = spec.memoryGB; maxCardName = spec.name; }
+  }
+  if (!Number.isFinite(minCardMem)) minCardMem = 0;
+  if (!Number.isFinite(maxCardMem)) maxCardMem = 0;
   const tpSize = Math.max(1, Math.ceil(totalMemPerReplica / maxCardMem));
 
   if (totalMemPerReplica > maxCardMem) {
@@ -275,8 +295,7 @@ export function diagnoseTraining(
     });
   }
 
-  // 5. 检查并行GPU数量
-  const availGpus = cardSpecs.length;
+  // 5. 检查并行GPU数量（availGpus 已在上方聚合时统计）
   if (tpSize > availGpus) {
     issues.push({
       severity: 'blocker',
@@ -341,4 +360,108 @@ export function diagnoseTraining(
   }
 
   return issues;
+}
+
+/* ========================================================================
+ * 训练前可行性预览（数值修复：让玩家在训练前看到所需技术/硬件清单）
+ * ====================================================================== */
+
+export interface TrainingRequirementPreview {
+  /** 目标参数量（B） */
+  paramCount: number;
+  /** 每副本总显存需求 GB（修正后） */
+  memoryPerReplicaGB: number;
+  /** 推荐并行策略 */
+  recommendedStrategy: 'dp_only' | 'tp' | 'tp_pp' | 'tp_pp_3d';
+  /** 所需技术（含前置）及说明 */
+  requiredTechs: { techId: string; reason: string }[];
+  /** 所需硬件清单 */
+  requiredHardware: {
+    minCardMemoryGB: number;
+    minInterconnectBW: number;
+    minGpuCount: number;
+    recommendedNodeType: string;
+  };
+  /** 人类可读摘要 */
+  summary: string[];
+}
+
+/**
+ * 在训练前预估所需技术/硬件，避免玩家盲目尝试大模型。
+ *
+ * 规则（基于修正后的显存模型，单卡 H100=80GB 基准）：
+ * - ≤13B：单卡可装载（dp_only），无需并行技术
+ * - 13B~40B：需 TP（tensor_parallel），单节点内切分
+ * - 40B~80B：需 TP+PP（tensor_parallel + pipeline_parallel），跨节点
+ * - >80B：需 TP+PP+高带宽（NVSwitch），3D 并行
+ */
+export function previewTrainingRequirements(
+  paramCount: number,
+  contextLength: number,
+  cardMemoryGB: number = 80,
+): TrainingRequirementPreview {
+  const memoryPerReplica = paramCount * 2 + paramCount * 12 + paramCount * 0.00005 * contextLength;
+  const requiredTechs: { techId: string; reason: string }[] = [];
+  const summary: string[] = [];
+
+  let recommendedStrategy: TrainingRequirementPreview['recommendedStrategy'] = 'dp_only';
+  let minInterconnectBW = 0;
+  let recommendedNodeType = 'standard (PCIe)';
+  let minGpuCount = 1;
+
+  const fitsSingleCard = memoryPerReplica <= cardMemoryGB;
+
+  if (fitsSingleCard) {
+    recommendedStrategy = 'dp_only';
+    minGpuCount = 1;
+    summary.push(`${paramCount}B 模型约需 ${memoryPerReplica.toFixed(0)}GB 显存，单卡 ${cardMemoryGB}GB 可装载，仅需数据并行（DP）。`);
+  } else if (paramCount <= 40) {
+    recommendedStrategy = 'tp';
+    minGpuCount = Math.ceil(memoryPerReplica / cardMemoryGB);
+    minInterconnectBW = 200;
+    recommendedNodeType = 'NVLink2/NVLink3';
+    requiredTechs.push({ techId: 'tensor_parallel', reason: '单卡显存不足，需张量并行在多卡间切分权重' });
+    summary.push(`${paramCount}B 模型约需 ${memoryPerReplica.toFixed(0)}GB 显存，超出单卡，需 TP=${minGpuCount}（tensor_parallel 技术）。`);
+  } else if (paramCount <= 80) {
+    recommendedStrategy = 'tp_pp';
+    const tp = Math.min(8, Math.ceil(memoryPerReplica / cardMemoryGB / 2));
+    const pp = Math.ceil(memoryPerReplica / cardMemoryGB / tp);
+    minGpuCount = tp * pp;
+    minInterconnectBW = 600;
+    recommendedNodeType = 'NVLink3/NVSwitch Gen1';
+    requiredTechs.push({ techId: 'tensor_parallel', reason: '张量并行切分权重维度' });
+    requiredTechs.push({ techId: 'pipeline_parallel', reason: '流水线并行切分层，降低单卡显存' });
+    summary.push(`${paramCount}B 模型约需 ${memoryPerReplica.toFixed(0)}GB 显存，需 TP=${tp}×PP=${pp}（tensor_parallel + pipeline_parallel）。`);
+  } else {
+    recommendedStrategy = 'tp_pp_3d';
+    const tp = 8;
+    const pp = Math.ceil(memoryPerReplica / cardMemoryGB / tp);
+    minGpuCount = tp * pp;
+    minInterconnectBW = 900;
+    recommendedNodeType = 'NVSwitch Gen1+';
+    requiredTechs.push({ techId: 'tensor_parallel', reason: '张量并行' });
+    requiredTechs.push({ techId: 'pipeline_parallel', reason: '流水线并行' });
+    requiredTechs.push({ techId: 'zero_1', reason: '优化器状态分片，进一步降低单卡显存' });
+    summary.push(`${paramCount}B 模型约需 ${memoryPerReplica.toFixed(0)}GB 显存，需 3D 并行 TP=${tp}×PP=${pp} + ZeRO，且互联 ≥900GB/s（NVSwitch）。`);
+  }
+
+  if (contextLength > 32768) {
+    requiredTechs.push({ techId: 'flash_attention_2', reason: '长上下文训练降低激活内存与通信' });
+    minInterconnectBW = Math.max(minInterconnectBW, 600);
+    summary.push(`长上下文（${contextLength}）建议 flash_attention_2 + NVSwitch。`);
+  }
+
+  return {
+    paramCount,
+    memoryPerReplicaGB: memoryPerReplica,
+    recommendedStrategy,
+    requiredTechs,
+    requiredHardware: {
+      minCardMemoryGB: cardMemoryGB,
+      minInterconnectBW,
+      minGpuCount,
+      recommendedNodeType,
+    },
+    summary,
+  };
 }

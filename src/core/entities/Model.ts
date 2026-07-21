@@ -9,6 +9,19 @@ import type { CapabilityId } from '../config/capabilities';
 /** 能力向量：维度 id → 真实能力值（无上限实数） */
 export type CapabilityVector = Record<CapabilityId, number>;
 
+/** 后训练阶段 */
+export type PostTrainingStage = 'sft' | 'rlhf' | 'dpo' | 'cot';
+
+/** 后训练状态 */
+export interface PostTrainingState {
+  stage: PostTrainingStage;
+  status: 'pending' | 'in_progress' | 'completed';
+  computeRemaining: number;
+  computeTotal: number;
+  startedAt: number;
+  completedAt: number | null;
+}
+
 /** 模型实体 */
 export interface Model {
   id: string;
@@ -32,8 +45,18 @@ export interface Model {
   rawCapabilities: CapabilityVector;
   /** 基础性能分（所有维度共享） */
   baseScore: number;
-  /** 已发布的天数（用于社区反馈降噪） */
+  /**
+   * 已发布的天数（用于社区反馈降噪）
+   * ★ I2 修复：此字段已废弃，仅保留以兼容旧存档读取。
+   *   新代码应使用 getDaysSincePublished(model, today) 派生计算。
+   *   OperationsSystem 不再每日 ++ 此字段，避免 models 数组引用每日变化。
+   */
   daysSincePublished: number;
+  /**
+   * 首次发布的游戏日期（-1 = 从未发布）。
+   * 重新发布（unpublish → publish）时不重置，保持社区反馈累积。
+   */
+  publishedAt: number;
   /** 玩家累计投入的评估研究员数量 */
   evaluationResearchers: number;
   /** 是否已发布到市场 */
@@ -46,4 +69,23 @@ export interface Model {
   usedInResearch: boolean;
   /** 噪声种子（基于模型 ID 确定性生成，保证观测值在每次渲染中一致） */
   noiseSeed: number;
+  /** PR-B v3：后训练状态列表（顺序执行：SFT → RLHF/DPO → CoT） */
+  postTraining: PostTrainingState[];
+}
+
+/**
+ * 派生计算模型已发布的天数（用于社区反馈降噪）。
+ *
+ * ★ I2 修复：替代原 OperationsSystem 每日 `m.daysSincePublished += 1` 写入。
+ * 性能收益：消除每日对 published model 的属性写入，使 models 数组引用
+ * 不再每日变化 → 所有订阅 models 的 UI（ModelPanel / ResearchPanel）
+ * 不再因 daysSincePublished ++ 而每日重渲染。
+ *
+ * 语义：
+ * - publishedAt === -1（从未发布）→ 返回 0（无社区反馈）
+ * - 已发布 → today - publishedAt（自动随 today 增长）
+ */
+export function getDaysSincePublished(model: Model, today: number): number {
+  if (model.publishedAt === undefined || model.publishedAt < 0) return 0;
+  return Math.max(0, today - model.publishedAt);
 }

@@ -147,3 +147,30 @@ export const CAPABILITIES: CapabilityDef[] = [
 
 export const CAPABILITY_MAP: Record<CapabilityId, CapabilityDef> =
   Object.fromEntries(CAPABILITIES.map((c) => [c.id, c])) as Record<CapabilityId, CapabilityDef>;
+
+/**
+ * 能力值反转基准（inverse 维度专用）
+ *
+ * BUG 修复：hallucination_rate / sycophancy / eval_awareness 等 inverse=true 维度
+ * 语义为"越低越好"，但能力计算把它们当正向维度处理（值越大评分越高）。
+ * 统一在评分/风险/市场等"比较大小"的场景用此函数取有效值：
+ *   正向维度 → 原值
+ *   反向维度 → INVERSE_CAP_BASE - 原值（值越小，有效值越高）
+ *
+ * 基准取 2000（能力值实际量级约 0~2500，2000 可保证有效值非负且单调）。
+ */
+export const INVERSE_CAP_BASE = 2000;
+
+/** 取某能力维度的"有效值"（用于评分、排名、最大值比较） */
+export function effectiveCapabilityValue(capId: CapabilityId, rawValue: number): number {
+  const def = CAPABILITY_MAP[capId];
+  if (def && def.inverse) {
+    return Math.max(0, INVERSE_CAP_BASE - rawValue);
+  }
+  return rawValue;
+}
+
+/** 该维度是否为反向维度（越低越好） */
+export function isInverseCapability(capId: CapabilityId): boolean {
+  return CAPABILITY_MAP[capId]?.inverse ?? false;
+}

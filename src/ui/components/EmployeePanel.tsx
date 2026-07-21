@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { useGame } from '../hooks/useGame';
 import { useGameState } from '../hooks/useGameState';
 import { StaffRole, type Employee } from '../../core/entities/Employee';
@@ -24,9 +24,9 @@ import { DEPT_HEAD_MIN_LEVEL } from '../../core/entities/Department';
 import type { Department } from '../../core/entities/Department';
 import type { StaffTrainingProject, StaffTrainingType } from '../../core/entities/StaffTrainingProject';
 import type { StaffAttributes } from '../../core/entities/Employee';
-import type { Candidate } from '../../core/GameState';
+import type { Candidate, GameData } from '../../core/GameState';
 import { RequestRecruitmentCommand, HireCandidateCommand, RejectCandidateCommand } from '../../core/commands/HireEmployeeCommand';
-import { HireNormalEmployeeCommand } from '../../core/commands/HireNormalEmployeeCommand';
+import { HireNormalEmployeesBatchCommand } from '../../core/commands/HireNormalEmployeeCommand';
 import { FireEmployeeCommand } from '../../core/commands/FireEmployeeCommand';
 import { AdjustSalaryCommand } from '../../core/commands/AdjustSalaryCommand';
 import { LearnSkillCommand } from '../../core/commands/LearnSkillCommand';
@@ -35,6 +35,7 @@ import { PromoteEmployeeCommand } from '../../core/commands/PromoteEmployeeComma
 import { StartStaffTrainingCommand, CancelStaffTrainingCommand } from '../../core/commands/StaffTrainingCommands';
 import { AppointDepartmentHeadCommand, TransferDepartmentCommand, AllocateNormalStaffCommand } from '../../core/commands/DepartmentCommands';
 import { formatCurrency } from '../../core/utils';
+import { useFormatDate } from '../hooks/useFormatDate';
 import { SwitchManagementModeCommand, AppointExecutiveCommand, DismissExecutiveCommand } from '../../core/commands/ManagementCommands';
 import {
   MANAGEMENT_MODES,
@@ -102,7 +103,8 @@ export function EmployeePanel() {
       </div>
 
       <div className={styles.tabBody}>
-        <div style={{ display: tab === 'employees' ? 'block' : 'none' }}>
+        {/* ★ UI-1 修复：display:none → 条件渲染，隐藏 tab 自动卸载订阅 */}
+        {tab === 'employees' && (
           <EmployeesTab
             game={game}
             employees={employees}
@@ -112,8 +114,8 @@ export function EmployeePanel() {
             date={date}
             lastTeamBuildingDay={lastTeamBuildingDay}
           />
-        </div>
-        <div style={{ display: tab === 'recruitment' ? 'block' : 'none' }}>
+        )}
+        {tab === 'recruitment' && (
           <RecruitmentTab
             game={game}
             employees={employees}
@@ -121,23 +123,23 @@ export function EmployeePanel() {
             resources={resources}
             funds={funds}
           />
-        </div>
-        <div style={{ display: tab === 'training' ? 'block' : 'none' }}>
+        )}
+        {tab === 'training' && (
           <TrainingTab
             game={game}
             employees={employees}
             staffTrainings={staffTrainings}
             funds={funds}
           />
-        </div>
-        <div style={{ display: tab === 'departments' ? 'block' : 'none' }}>
+        )}
+        {tab === 'departments' && (
           <DepartmentsTab
             game={game}
             employees={employees}
             departments={departments}
           />
-        </div>
-        <div style={{ display: tab === 'management' ? 'block' : 'none' }}>
+        )}
+        {tab === 'management' && (
           <ManagementTab
             game={game}
             employees={employees}
@@ -147,7 +149,7 @@ export function EmployeePanel() {
             managementModeChangedDay={managementModeChangedDay}
             executives={executives}
           />
-        </div>
+        )}
       </div>
     </section>
   );
@@ -170,8 +172,29 @@ interface EmployeesTabProps {
 function EmployeesTab({ game, employees, departments, resources, funds, date, lastTeamBuildingDay }: EmployeesTabProps) {
   const [roleFilter, setRoleFilter] = useState<StaffRole | 'all'>('all');
 
+  // ★ UI-2 修复：原 map 内 employees.filter((e) => e.role === role).length 是 O(N×R)。
+  //   改为 useMemo 一次性计算各角色计数，O(N) → O(1) 查找。
+  const roleCoreCounts = useMemo(() => {
+    const counts = {} as Record<StaffRole, number>;
+    for (const e of employees) {
+      counts[e.role] = (counts[e.role] ?? 0) + 1;
+    }
+    return counts;
+  }, [employees]);
+
+  // ★ UI-3 修复：构建 deptId → Department 的 Map，供 EmployeeCard 查询使用。
+  //   避免 EmployeeCard 接收整个 departments 数组（引用变化触发全量重渲染）。
+  const deptMap = useMemo(() => {
+    const m = new Map<string, Department>();
+    for (const d of departments) m.set(d.id, d);
+    return m;
+  }, [departments]);
+
   // 统计
-  const coreDailySalary = employees.reduce((sum, e) => sum + e.salary / 365, 0);
+  const coreDailySalary = useMemo(
+    () => employees.reduce((sum, e) => sum + e.salary / 365, 0),
+    [employees],
+  );
   // 普通员工资源
   const normalRoles = Object.values(ROLE_TO_STAFF_RESOURCE);
   const normalTotal = normalRoles.reduce((sum, id) => sum + (resources[id] ?? 0), 0);
@@ -220,7 +243,7 @@ function EmployeesTab({ game, employees, departments, resources, funds, date, la
           全部 ({employees.length})
         </button>
         {(Object.keys(ROLE_CONFIG) as StaffRole[]).map((role) => {
-          const count = employees.filter((e) => e.role === role).length;
+          const count = roleCoreCounts[role] ?? 0;
           return (
             <button
               key={role}
@@ -242,16 +265,23 @@ function EmployeesTab({ game, employees, departments, resources, funds, date, la
           <div className={styles.emptyHint}>该分类暂无员工</div>
         ) : (
           <div className={styles.empList}>
-            {filtered.map((emp) => (
-              <EmployeeCard
-                key={emp.id}
-                emp={emp}
-                game={game}
-                departments={departments}
-                date={date}
-                funds={funds}
-              />
-            ))}
+            {filtered.map((emp) => {
+              // ★ UI-3 修复：在父级一次性查好 dept 信息，避免 EmployeeCard 接收整个 departments 数组。
+              //   这样当 departments 数组引用变化但本员工所在 dept 未变时，memo 可跳过重渲染。
+              const dept = emp.departmentId ? deptMap.get(emp.departmentId) ?? null : null;
+              const isDeptHead = dept ? dept.headId === emp.id : false;
+              return (
+                <EmployeeCard
+                  key={emp.id}
+                  emp={emp}
+                  game={game}
+                  dept={dept}
+                  isDeptHead={isDeptHead}
+                  date={date}
+                  funds={funds}
+                />
+              );
+            })}
           </div>
         );
       })()}
@@ -266,17 +296,22 @@ function EmployeesTab({ game, employees, departments, resources, funds, date, la
 interface EmployeeCardProps {
   emp: Employee;
   game: ReturnType<typeof useGame>;
-  departments: Department[];
+  dept: Department | null;
+  isDeptHead: boolean;
   date: number;
   funds: number;
 }
 
-function EmployeeCard({ emp, game, departments, date, funds }: EmployeeCardProps) {
+/**
+ * ★ UI-3 修复：用 memo 包裹，仅在 emp/dept/isDeptHead/date/funds 变化时重渲染。
+ *   - date 每日变更是预期行为（"入职第 X 天" 显示需要）
+ *   - funds 变更触发按钮 disabled 状态更新
+ *   - 其他员工或部门更新不再触发本卡片重渲染
+ */
+const EmployeeCard = memo(function EmployeeCard({ emp, game, dept, isDeptHead, date, funds }: EmployeeCardProps) {
   const [showSkills, setShowSkills] = useState(false);
   const roleCfg = ROLE_CONFIG[emp.role];
   const expNeeded = experienceForLevel(emp.level);
-  const dept = departments.find((d) => d.id === emp.departmentId);
-  const isDeptHead = dept ? dept.headId === emp.id : false;
 
   // 奖金冷却
   const bonusCooldown = emp.lastBonusDay != null ? BONUS_COOLDOWN_DAYS - (date - emp.lastBonusDay) : 0;
@@ -423,7 +458,7 @@ function EmployeeCard({ emp, game, departments, date, funds }: EmployeeCardProps
       )}
     </div>
   );
-}
+});
 
 /** 绩效等级颜色标签 */
 function PerfGrade({ grade }: { grade: string }) {
@@ -461,6 +496,16 @@ function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }
   // 各角色批量招聘数量
   const [normalHireQty, setNormalHireQty] = useState<Record<string, number>>({});
 
+  // ★ UI-2 修复：原 map 内 employees.filter((e) => e.role === r).length 是 O(N×R)。
+  //   改为 useMemo 一次性计算各角色计数。
+  const roleCoreCounts = useMemo(() => {
+    const counts = {} as Record<StaffRole, number>;
+    for (const e of employees) {
+      counts[e.role] = (counts[e.role] ?? 0) + 1;
+    }
+    return counts;
+  }, [employees]);
+
   const activeCandidates = pendingCandidates.filter((c) => c.status === 'pending');
   const roleCandidates = activeCandidates.filter((c) => c.role === role);
 
@@ -481,7 +526,7 @@ function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }
       <div className={styles.devRow}>
         <span className={styles.devRowLabel}>目标角色</span>
         {(Object.keys(ROLE_CONFIG) as StaffRole[]).map((r) => {
-          const roleCoreCount = employees.filter((e) => e.role === r).length;
+          const roleCoreCount = roleCoreCounts[r] ?? 0;
           const isFull = roleCoreCount >= CORE_EMPLOYEE_CAP_PER_ROLE;
           return (
             <button
@@ -504,7 +549,7 @@ function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }
           if (ch.id === 'internal_promote') return null;
           // executive_search 渠道仅对 MANAGER 角色开放
           if (ch.id === 'executive_search' && role !== StaffRole.MANAGER) return null;
-          const isFull = employees.filter((e) => e.role === role).length >= CORE_EMPLOYEE_CAP_PER_ROLE;
+          const isFull = (roleCoreCounts[role] ?? 0) >= CORE_EMPLOYEE_CAP_PER_ROLE;
           return (
             <button
               key={ch.id}
@@ -556,9 +601,8 @@ function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }
               className={styles.btn}
               disabled={funds < batchCost}
               onClick={() => {
-                for (let i = 0; i < qty; i++) {
-                  game.executeCommand(new HireNormalEmployeeCommand(r));
-                }
+                // ★ P1-8 修复：使用批量命令，单次 state.update 替代 N 次循环
+                game.executeCommand(new HireNormalEmployeesBatchCommand(r, qty));
                 setNormalHireQty((prev) => ({ ...prev, [r]: 1 }));
               }}
             >
@@ -595,8 +639,7 @@ function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }
               key={cand.id}
               candidate={cand}
               game={game}
-              employees={employees}
-              role={role}
+              roleCoreCount={roleCoreCounts[role] ?? 0}
             />
           ))}
         </div>
@@ -606,15 +649,14 @@ function RecruitmentTab({ game, employees, pendingCandidates, resources, funds }
 }
 
 /** 候选人卡片 */
-function CandidateCard({ candidate, game, employees, role }: {
+const CandidateCard = memo(function CandidateCard({ candidate, game, roleCoreCount }: {
   candidate: Candidate;
   game: ReturnType<typeof useGame>;
-  employees: Employee[];
-  role: StaffRole;
+  roleCoreCount: number;
 }) {
-  const roleCoreCount = employees.filter((e) => e.role === role).length;
   const isFull = roleCoreCount >= CORE_EMPLOYEE_CAP_PER_ROLE;
   const channelCfg = RECRUITMENT_CHANNELS[candidate.channel];
+  const formatDay = useFormatDate();
   const attrKeys: (keyof StaffAttributes)[] = ['intelligence', 'creativity', 'leadership', 'stamina', 'charisma'];
   const attrLabels: Record<keyof StaffAttributes, string> = {
     intelligence: '智', creativity: '创', leadership: '领', stamina: '体', charisma: '魅',
@@ -637,7 +679,7 @@ function CandidateCard({ candidate, game, employees, role }: {
 
       <div className={styles.empInfo}>
         <span>期望薪资 {formatCurrency(candidate.expectedSalary)}</span>
-        <span>第 {candidate.generatedDay} 天生成</span>
+        <span>{formatDay(candidate.generatedDay)} 生成</span>
       </div>
 
       <div className={styles.empActions}>
@@ -657,7 +699,7 @@ function CandidateCard({ candidate, game, employees, role }: {
       </div>
     </div>
   );
-}
+});
 
 /* ============================================================
    标签三：培训
@@ -1029,8 +1071,13 @@ interface ManagementTabProps {
 function ManagementTab({
   game, employees, funds, date, managementMode, managementModeChangedDay, executives,
 }: ManagementTabProps) {
-  // 整个 GameData 快照（用于管理效率/高管加成等派生计算）
-  const data = useGameState((s) => s);
+  // 仅订阅派生函数所需字段（替代 useGameState((s) => s) 全量订阅）
+  // 派生函数仅访问 resources/employees/managementMode/executives
+  const resources = useGameState((s) => s.resources);
+  const data = useMemo<GameData>(
+    () => ({ resources, employees, managementMode, executives }) as unknown as GameData,
+    [resources, employees, managementMode, executives],
+  );
 
   // 派生指标
   const totalNormal = getTotalNormalHeadcount(data);

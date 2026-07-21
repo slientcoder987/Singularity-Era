@@ -133,12 +133,27 @@ export class GameLoop {
     const beforeDate = this.state.read().date;
     this.events.emit('DAY_START', beforeDate);
 
-    for (const system of this.systems) {
-      system.update(this.state, this.events, 1);
-    }
+    // ★ 性能优化（核心）：批量更新——在所有系统执行期间抑制 notify，
+    //   结束后统一通知 UI 一次。原实现每个系统 update 都 notify，
+    //   每天 30+ 次 notify × 60+ 个 useGameState selector = 1800+ 次重算。
+    //   批量后降为 1 次 notify，消除 UI 层重复重算。
+    this.state.batch(() => {
+      // ★ 加固：单系统异常不中断整个游戏循环，避免连锁崩溃
+      //   （如 TrainingSystem 栈溢出 → Immer 代理未清理 → RiskSystem "proxy revoked"）
+      for (const system of this.systems) {
+        try {
+          system.update(this.state, this.events, 1);
+        } catch (err) {
+          // 记录错误但继续执行后续系统，保证 date 递增和其他系统正常运转
+          // eslint-disable-next-line no-console
+          console.error(`[GameLoop] System "${system.name}" threw on day ${beforeDate}:`, err);
+          this.events.emit('SYSTEM_ERROR', { systemName: system.name, error: String(err), day: beforeDate });
+        }
+      }
 
-    this.state.update((draft) => {
-      draft.date += 1;
+      this.state.update((draft) => {
+        draft.date += 1;
+      });
     });
 
     this.events.emit('DAY_END', this.state.read().date);

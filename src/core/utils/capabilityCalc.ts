@@ -8,6 +8,7 @@ import { CAPABILITIES } from '../config/capabilities';
 import type { CapabilityVector } from '../entities/Model';
 import type { Dataset } from '../entities/Dataset';
 import type { TechEffect } from '../entities/Infrastructure';
+import { aggregateCapabilityBonuses, aggregateAdditive, TECH_EFFECT_CAPS } from './techEffectScale';
 
 /** 基础性能分计算参数 */
 export interface BaseScoreParams {
@@ -57,28 +58,35 @@ export function calcBaseScore(
 
 /**
  * 从科技效果推导基础性能分参数
+ *
+ * ★ PR-A 修复：参数调整语义为加法（A/B/E/alpha/beta 为数值基准），
+ *   但加法累加无上限会破坏缩放公式。引入 aggregateAdditive 配合上下限：
+ *   - A/B 调整范围 ±500（DEFAULT A=480, B=1820，±500 仍在合理范围）
+ *   - E 调整范围 ±2.0（DEFAULT E=1.0，±2.0 即 [−1, 3]，下限保护 max(0.1, E)）
+ *   - alpha/beta 调整范围 ±0.5
  */
 export function deriveBaseScoreParams(effects: TechEffect[]): BaseScoreParams {
-  let p = { ...DEFAULT_BASE_SCORE_PARAMS };
-  for (const eff of effects) {
-    switch (eff.type) {
-      case 'modify_base_score_E':
-        p.E += eff.value;
-        break;
-      case 'modify_base_score_A':
-        p.A += eff.value;
-        break;
-      case 'modify_base_score_B':
-        p.B += eff.value;
-        break;
-      case 'modify_alpha':
-        p.alpha += eff.value;
-        break;
-      case 'modify_beta':
-        p.beta += eff.value;
-        break;
-    }
-  }
+  const p = { ...DEFAULT_BASE_SCORE_PARAMS };
+  p.E += aggregateAdditive(effects, 'modify_base_score_E', {
+    maxCap: TECH_EFFECT_CAPS.modify_base_score_E,
+    minCap: -TECH_EFFECT_CAPS.modify_base_score_E,
+  });
+  p.A += aggregateAdditive(effects, 'modify_base_score_A', {
+    maxCap: TECH_EFFECT_CAPS.modify_base_score_A,
+    minCap: -TECH_EFFECT_CAPS.modify_base_score_A,
+  });
+  p.B += aggregateAdditive(effects, 'modify_base_score_B', {
+    maxCap: TECH_EFFECT_CAPS.modify_base_score_B,
+    minCap: -TECH_EFFECT_CAPS.modify_base_score_B,
+  });
+  p.alpha += aggregateAdditive(effects, 'modify_alpha', {
+    maxCap: TECH_EFFECT_CAPS.modify_alpha,
+    minCap: -TECH_EFFECT_CAPS.modify_alpha,
+  });
+  p.beta += aggregateAdditive(effects, 'modify_beta', {
+    maxCap: TECH_EFFECT_CAPS.modify_beta,
+    minCap: -TECH_EFFECT_CAPS.modify_beta,
+  });
   p.E = Math.max(0.1, p.E);
   p.A = Math.max(0.1, p.A);
   p.B = Math.max(0.1, p.B);
@@ -136,14 +144,15 @@ export function calcDataQualityBonus(capability: CapabilityDef, dataset: Dataset
 
 /**
  * 从科技效果中收集能力直接加成
+ *
+ * ★ PR-A 修复：原加法累加无上限，100 个 +1% capability_bonus 技术可堆出 +100% 单能力加成，
+ *   突破涌现阈值导致能力爆炸。改用 aggregateCapabilityBonuses，每能力硬性上限 +50%。
  */
 function collectCapabilityBonuses(effects: TechEffect[]): Partial<Record<CapabilityId, number>> {
+  const aggregated = aggregateCapabilityBonuses(effects, TECH_EFFECT_CAPS.capability_bonus);
   const bonuses: Partial<Record<CapabilityId, number>> = {};
-  for (const eff of effects) {
-    if (eff.type === 'capability_bonus') {
-      const capId = eff.capability as CapabilityId;
-      bonuses[capId] = (bonuses[capId] ?? 0) + eff.bonus;
-    }
+  for (const [capId, value] of Object.entries(aggregated)) {
+    bonuses[capId as CapabilityId] = value;
   }
   return bonuses;
 }
@@ -285,6 +294,8 @@ export function calcTrainingCompute(
   trainingTokens: number,
   contextLength: number,
 ): number {
+  // S2-1 修复：边界防护，paramCount=0 时 d=0 导致除零得 Infinity，最终 0×Infinity=NaN
+  if (paramCount <= 0 || trainingTokens <= 0) return 0;
   const d = 2 * Math.pow(paramCount, 1 / 3);
   const flops = 6 * paramCount * trainingTokens * (1 + contextLength / (4 * d));
   return flops / (1e12 * 86400);

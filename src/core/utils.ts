@@ -45,6 +45,14 @@ export function formatGameDate(startDate: string, date: number): string {
 }
 
 /**
+ * 将游戏内天数（相对于 startDate）转换为 Y-M-D 格式日期字符串。
+ * 用于事件日志、模型信息等显示场景，统一时间格式。
+ */
+export function formatDayToDate(day: number, startDate: string = '2023-01-01'): string {
+  return formatGameDate(startDate, day);
+}
+
+/**
  * 按资源 UI 配置的格式化方式渲染数值。
  * - currency: 美元千分位
  * - number: 千分位整数

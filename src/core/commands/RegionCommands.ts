@@ -142,7 +142,8 @@ export class SetHeadquartersCommand implements Command {
         draft.resources[card.modelId] = (draft.resources[card.modelId] ?? 0) + card.count;
 
         // 创建 CardInstance 并按顺序安装到节点
-        const pool: CardInstance[] = (draft.resourceMeta[card.modelId] as CardInstance[]) ?? [];
+        const rawPool = draft.resourceMeta[card.modelId];
+        const pool: CardInstance[] = Array.isArray(rawPool) ? rawPool : [];
         for (let i = 0; i < card.count; i++) {
           const targetNode = draft.serverNodes[cardIdx % nodeCount];
           const uid = `${card.modelId}-init-${cardIdx}`;
@@ -242,8 +243,15 @@ export class EnterRegionCommand implements Command {
   execute(state: GameState, events: EventBus): void {
     const current = state.read();
     const region = REGION_MAP[this.regionId];
-    if (!region) return;
-    if (current.operatingRegionIds.includes(this.regionId)) return;
+    // BUG 修复：未知 regionId 不再静默 return，发出失败事件让玩家可感知
+    if (!region) {
+      events.emit('REGION_ENTRY_FAILED', this.regionId, `未知地区: ${String(this.regionId)}`);
+      return;
+    }
+    if (current.operatingRegionIds.includes(this.regionId)) {
+      events.emit('REGION_ENTRY_FAILED', this.regionId, '已进入该地区');
+      return;
+    }
 
     const entryCost = 100_000 + region.marketEntryDifficulty * 50_000;
     if (current.resources['funds'] < entryCost) {

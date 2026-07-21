@@ -92,7 +92,8 @@ export class RentCloudComputeCommand implements Command {
     }
 
     // 检查该服务商在当前地区的已租用量
-    const activeContracts = (current.resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
+    const rawContracts = current.resourceMeta['cloud_rental_contracts'];
+    const activeContracts: CloudRentalContract[] = Array.isArray(rawContracts) ? rawContracts : [];
     const existingTFLOPS = activeContracts
       .filter((c) => c.providerId === this.providerId && c.regionId === hqRegionId)
       .reduce((s, c) => s + c.tflops, 0);
@@ -136,9 +137,10 @@ export class RentCloudComputeCommand implements Command {
       // 设计-3 修复：不再把云算力计入 compute_power 资源（避免与本地卡混淆）。
       // 云算力统一通过 getActiveCloudTFLOPS() 查询，训练/推理系统已支持。
 
-      const contracts = (draft.resourceMeta['cloud_rental_contracts'] as CloudRentalContract[]) ?? [];
-      contracts.push(contract);
-      draft.resourceMeta['cloud_rental_contracts'] = contracts;
+      const rawContracts2 = draft.resourceMeta['cloud_rental_contracts'];
+      const contracts2: CloudRentalContract[] = Array.isArray(rawContracts2) ? rawContracts2 : [];
+      contracts2.push(contract);
+      draft.resourceMeta['cloud_rental_contracts'] = contracts2;
     });
 
     events.emit('CLOUD_RENTAL_STARTED', {

@@ -7,6 +7,7 @@ import type { Model } from '../entities/Model';
 import type { CompetitorState } from '../entities/Competitor';
 import { COMPETITOR_TEMPLATES } from '../entities/Competitor';
 import { REGION_MAP, type RegionId } from '../config/regions';
+import { effectiveCapabilityValue, type CapabilityId } from '../config/capabilities';
 
 /** 获取活跃竞争对手列表（优先使用实际状态） */
 function getActiveCompetitors(competitorStates?: CompetitorState[]): CompetitorState[] {
@@ -99,11 +100,12 @@ const MARKET_SEGMENTS: MarketSegment[] = [
 // 玩家能力评分
 // ============================================================
 
-/** 获取玩家在某个能力维度的最佳得分 */
+/** 获取玩家在某个能力维度的最佳得分（inverse 维度取反转后的有效值） */
 export function getPlayerBestCapability(capId: string, models: Model[]): number {
   let best = 0;
   for (const m of models) {
-    const val = (m.capabilities as Record<string, number>)[capId] ?? 0;
+    const raw = (m.capabilities as Record<string, number>)[capId] ?? 0;
+    const val = effectiveCapabilityValue(capId as CapabilityId, raw);
     if (val > best) best = val;
   }
   return best;
@@ -146,7 +148,8 @@ function calcCompetitorSegmentScore(
   let rawScore = 0;
   let totalWeight = 0;
   for (const [capId, weight] of Object.entries(segment.capabilityWeights)) {
-    rawScore += (competitor.capabilities[capId] ?? 0) * weight;
+    const raw = (competitor.capabilities[capId] ?? 0);
+    rawScore += effectiveCapabilityValue(capId as CapabilityId, raw) * weight;
     totalWeight += weight;
   }
   const baseScore = totalWeight > 0 ? rawScore / totalWeight : 0;
@@ -379,11 +382,13 @@ export function calcUserChurn(
   const baseChurn = 0.0007; // ~2% 月流失 / 30天
   const deceptionPenalty = 0.01 * downgradeLevel;
 
-  // 竞争者影响（使用实际状态）
+  // 竞争者影响（使用实际状态）—— BUG 修复：取各维度反转后的有效值再取最大
   const comps = getActiveCompetitors(currentCompetitorStates);
   const avgCompCap = comps.length > 0
     ? comps.reduce((s, c) => {
-        const max = Math.max(...Object.values(c.capabilities));
+        const effVals = (Object.entries(c.capabilities) as [CapabilityId, number][])
+          .map(([capId, v]) => effectiveCapabilityValue(capId, v));
+        const max = effVals.length > 0 ? Math.max(...effVals) : 0;
         return s + max;
       }, 0) / comps.length
     : 500;
